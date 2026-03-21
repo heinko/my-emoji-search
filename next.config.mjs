@@ -6,7 +6,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
- 
+  serverExternalPackages: ['onnxruntime-node'],
   eslint: {
     ignoreDuringBuilds: true,
   },
