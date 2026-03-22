@@ -14,6 +14,12 @@ async function getExtractor() {
         env.allowLocalModels = false;
         env.allowRemoteModels = true;
         
+        // Critical Fix for iPhone Safari Crash:
+        // Limit WASM threads to 1 to prevent WebKit Memory/CPU overheat
+        if (env.backends?.onnx?.wasm) {
+          env.backends.onnx.wasm.numThreads = 1;
+        }
+        
         const extractor = await pipeline('feature-extraction', 'Xenova/paraphrase-multilingual-MiniLM-L12-v2', {
           progress_callback: (info) => {
             // Optional: You could expose this to the UI to show download progress
@@ -47,6 +53,8 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean) {
   const [results, setResults] = useState<EmojiItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [modelLoading, setModelLoading] = useState(false);
+  const isExtracting = useRef(false);
+  const latestQuery = useRef("");
 
   useEffect(() => {
     if (!isSemantic) return;
@@ -66,6 +74,7 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean) {
   }, [isSemantic]);
 
   const search = useCallback(async (query: string) => {
+    latestQuery.current = query;
     if (!query.trim()) {
       setResults([]);
       setIsSearching(false);
@@ -79,12 +88,26 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean) {
     // 1. Generate Query Vector if Semantic Mode
     let queryVector: number[] | null = null;
     if (isSemantic) {
+      if (isExtracting.current) return; // Prevent concurrent model execution from blowing up memory
+      
       try {
+        isExtracting.current = true;
         const extractor = await getExtractor();
+        
+        // If the query changed rapidly, abort this stale execution
+        if (latestQuery.current !== query) {
+          isExtracting.current = false;
+          // Re-trigger with latest
+          search(latestQuery.current); 
+          return;
+        }
+
         const output = await extractor(lowerQuery, { pooling: 'mean', normalize: true });
         queryVector = Array.from(output.data) as number[];
       } catch (e) {
         console.error("Semantic extraction error", e);
+      } finally {
+        isExtracting.current = false;
       }
     }
 
