@@ -1,24 +1,16 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { Search, Copy, Check, Sparkles, Loader2, BrainCircuit, Info, Languages } from "lucide-react"
+import { Search, Copy, Check, Sparkles, Loader2, BrainCircuit, Info } from "lucide-react"
 import { Input } from "@/components/ui/input"
-import { loadEmojiData, locales, type EmojiItem } from "@/lib/emoji-data"
+import { loadEmojiData, type EmojiItem } from "@/lib/emoji-data"
 import { cn } from "@/lib/utils"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useSemanticSearch } from "@/hooks/use-semantic-search"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 
 export default function EmojiSearch() {
-  const [locale, setLocale] = useState("my")
   const [allEmojis, setAllEmojis] = useState<EmojiItem[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [copiedEmoji, setCopiedEmoji] = useState<string | null>(null)
@@ -27,16 +19,16 @@ export default function EmojiSearch() {
   const [showHint, setShowHint] = useState(true)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
-  // 1. Load emoji index for selected locale
+  // 1. Load emoji index
   useEffect(() => {
     const init = async () => {
       setIsLoading(true)
-      const data = await loadEmojiData(locale)
+      const data = await loadEmojiData()
       setAllEmojis(data)
       setIsLoading(false)
     }
     init()
-  }, [locale])
+  }, [])
 
   // 2. Transformer Semantic Search Hook
   const { results, search, isSearching, modelLoading } = useSemanticSearch(allEmojis, isSemantic)
@@ -93,7 +85,7 @@ export default function EmojiSearch() {
               ref={searchInputRef}
               type="text"
               disabled={isLoading}
-              placeholder={locale === 'my' ? "ဗမာလို ရှာကြည့်ပါ..." : "Search emojis in English..."}
+              placeholder="ဗမာလို ရှာကြည့်ပါ... (Search in Burmese or English)"
               className={cn(
                 "pl-12 pr-4 py-6 text-lg rounded-2xl border-2 transition-all duration-300",
                 "bg-card shadow-lg focus:shadow-xl",
@@ -120,27 +112,7 @@ export default function EmojiSearch() {
             )}
           </div>
 
-          {/* Language Picker */}
-          <div className="w-full md:w-48 animate-slide-up" style={{ animationDelay: "0.2s" }}>
-            <Select value={locale} onValueChange={(val) => {
-              setLocale(val)
-              setSearchTerm("")
-            }}>
-              <SelectTrigger className="w-full py-6 rounded-2xl border-2 bg-card shadow-lg">
-                <div className="flex items-center gap-2">
-                  <Languages className="h-4 w-4 text-muted-foreground" />
-                  <SelectValue placeholder="Language" />
-                </div>
-              </SelectTrigger>
-              <SelectContent className="rounded-xl">
-                {locales.map((l) => (
-                  <SelectItem key={l.code} value={l.code}>
-                    {l.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+
         </div>
 
         {/* Mode Toggle */}
@@ -181,12 +153,12 @@ export default function EmojiSearch() {
             <div className="flex items-center gap-1">
               <Sparkles className="h-5 w-5 text-primary animate-bounce-soft" />
               <span className="text-muted-foreground">
-                {locale === 'my' ? 'ဗမာလို ရှာကြည့်ပါ' : 'Start typing to search'}
+                ဗမာလို ရှာကြည့်ပါ (Start typing to search)
               </span>
               <Sparkles className="h-5 w-5 text-primary animate-bounce-soft" style={{ animationDelay: "0.5s" }} />
             </div>
             <div className="flex flex-wrap justify-center gap-2 text-sm text-muted-foreground/60 max-w-md">
-              {(locale === 'my' ? ["ပျော်ရွှင်", "ဝမ်းနည်း", "အားကစား", "မြန်မာ"] : ["happy", "sad", "sports", "myanmar"]).map(word => (
+              {["ပျော်ရွှင်", "ဝမ်းနည်း", "အားကစား", "မြန်မာ"].map(word => (
                 <button 
                   key={word}
                   onClick={() => setSearchTerm(word)}

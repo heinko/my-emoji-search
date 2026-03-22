@@ -14,24 +14,29 @@ export interface EmojiItem {
   syllables?: string[];
 }
 
-export const locales = [
-  { code: 'my', name: 'ဗမာ (Burmese)' },
-  { code: 'en', name: 'English' },
-];
 
-export async function loadEmojiData(locale: string): Promise<EmojiItem[]> {
+
+// Cache the data in memory so we don't re-parse 31MB repeatedly when switching locales
+let cachedEmojiData: EmojiItem[] | null = null;
+
+export async function loadEmojiData(): Promise<EmojiItem[]> {
   try {
-    const response = await fetch(`/data/emoji/emoji-index-${locale}.json`);
-    if (!response.ok) throw new Error(`Failed to fetch emoji data: ${response.statusText}`);
-    const data: EmojiItem[] = await response.json();
+    let rawData: EmojiItem[];
     
-    // Pre-calculate syllables for Burmese locale once upon load to avoid
-    // running expensive regex thousands of times per keystroke
-    if (locale === 'my') {
+    if (cachedEmojiData) {
+      rawData = JSON.parse(JSON.stringify(cachedEmojiData)); // deep copy to allow modifications
+    } else {
+      // Always fetch the 'my' index because it contains the 384d semantic embeddings 
+      // and both enName and myName. The en-only index lacks embeddings and myanmar context.
+      const response = await fetch(`/data/emoji/emoji-index-my.json`);
+      if (!response.ok) throw new Error(`Failed to fetch emoji data: ${response.statusText}`);
+      rawData = await response.json();
+      
       // Yield to main thread briefly before heavy work
       await new Promise(resolve => setTimeout(resolve, 0));
       
-      for (const emoji of data) {
+      // Pre-calculate syllables once
+      for (const emoji of rawData) {
         if (emoji.myName) {
           emoji.syllables = Array.from(new Set([
             ...sylbreak(emoji.myName.toLowerCase()),
@@ -41,11 +46,20 @@ export async function loadEmojiData(locale: string): Promise<EmojiItem[]> {
           emoji.syllables = [];
         }
       }
+      
+      cachedEmojiData = rawData;
+      // Re-copy since we just mutated rawData
+      rawData = JSON.parse(JSON.stringify(cachedEmojiData));
     }
     
-    return data;
+    // Set the display name
+    for (const emoji of rawData) {
+      emoji.displayName = emoji.myName || emoji.enName;
+    }
+    
+    return rawData;
   } catch (error) {
-    console.error(`Failed to load emoji data for locale: ${locale}`, error);
+    console.error(`Failed to load emoji data`, error);
     return [];
   }
 }

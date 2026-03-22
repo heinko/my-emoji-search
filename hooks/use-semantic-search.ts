@@ -13,13 +13,13 @@ async function getExtractor() {
         // Do not use local files in Next.js browser, fetch directly from HF Hub
         env.allowLocalModels = false;
         env.allowRemoteModels = true;
-        
+
         // Critical Fix for iPhone Safari Crash:
         // Limit WASM threads to 1 to prevent WebKit Memory/CPU overheat
         if (env.backends?.onnx?.wasm) {
           env.backends.onnx.wasm.numThreads = 1;
         }
-        
+
         const extractor = await pipeline('feature-extraction', 'Xenova/paraphrase-multilingual-MiniLM-L12-v2', {
           progress_callback: (info) => {
             // Optional: You could expose this to the UI to show download progress
@@ -69,7 +69,7 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean) {
         console.error("Failed to load transformer model", e);
         if (mounted) setModelLoading(false);
       });
-      
+
     return () => { mounted = false; };
   }, [isSemantic]);
 
@@ -83,22 +83,23 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean) {
 
     setIsSearching(true);
     const lowerQuery = query.toLowerCase();
-    const querySyllables = sylbreak(lowerQuery);
-    
+    const isBurmeseQuery = /[\u1000-\u109F]/.test(lowerQuery);
+    const querySyllables = isBurmeseQuery ? sylbreak(lowerQuery) : [];
+
     // 1. Generate Query Vector if Semantic Mode
     let queryVector: number[] | null = null;
     if (isSemantic) {
       if (isExtracting.current) return; // Prevent concurrent model execution from blowing up memory
-      
+
       try {
         isExtracting.current = true;
         const extractor = await getExtractor();
-        
+
         // If the query changed rapidly, abort this stale execution
         if (latestQuery.current !== query) {
           isExtracting.current = false;
           // Re-trigger with latest
-          search(latestQuery.current); 
+          search(latestQuery.current);
           return;
         }
 
@@ -114,13 +115,13 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean) {
     // 2. Score Emojis
     const scored = allEmojis.map(emoji => {
       let score = 0;
-      
+
       const myNameLower = emoji.myName ? emoji.myName.toLowerCase() : "";
       const enNameLower = emoji.enName ? emoji.enName.toLowerCase() : "";
-      
+
       // Exact Name/Keyword Match (Highest priority)
       if (
-        (myNameLower && myNameLower === lowerQuery) || 
+        (myNameLower && myNameLower === lowerQuery) ||
         (enNameLower && enNameLower === lowerQuery) ||
         (emoji.keywords && emoji.keywords.some(k => k.toLowerCase() === lowerQuery))
       ) {
@@ -129,29 +130,45 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean) {
 
       // Full Substring Match (Strong boost)
       if (
-        (myNameLower && myNameLower.includes(lowerQuery)) || 
+        (myNameLower && myNameLower.includes(lowerQuery)) ||
         (enNameLower && enNameLower.includes(lowerQuery)) ||
         (emoji.keywords && emoji.keywords.some(k => k.toLowerCase().includes(lowerQuery)))
       ) {
         score += 1.0;
       }
 
-      // Proportional Syllable Match (Medium boost for Burmese compound logic)
-      const emojiSyllables = emoji.syllables || [];
-      
-      let matchedSyllables = 0;
-      for (const qs of querySyllables) {
-        if (emojiSyllables.includes(qs)) matchedSyllables++;
-      }
-      
-      if (querySyllables.length > 0) {
-        score += (matchedSyllables / querySyllables.length) * 0.6;
+      if (isBurmeseQuery) {
+        // Proportional Syllable Match (Medium boost for Burmese compound logic)
+        const emojiSyllables = emoji.syllables || [];
+        let matchedSyllables = 0;
+        for (const qs of querySyllables) {
+          if (emojiSyllables.includes(qs)) matchedSyllables++;
+        }
+
+        if (querySyllables.length > 0) {
+          score += (matchedSyllables / querySyllables.length) * 0.6;
+        }
+      } else {
+        // English Word Match (Boost for English Queries)
+        const queryWords = lowerQuery.split(/\s+/).filter(Boolean);
+        let matchedWords = 0;
+        if (queryWords.length > 0) {
+          for (const qw of queryWords) {
+            if (
+              (enNameLower && enNameLower.includes(qw)) ||
+              (emoji.keywords && emoji.keywords.some(k => k.toLowerCase().includes(qw)))
+            ) {
+              matchedWords++;
+            }
+          }
+          score += (matchedWords / queryWords.length) * 0.8;
+        }
       }
 
       // Semantic Similarity (The Modern Approach)
       if (isSemantic && queryVector && emoji.embedding && emoji.embedding.length > 0) {
         const similarity = cosineSimilarity(queryVector, emoji.embedding);
-        
+
         // Multi-Lingual Transformer similarities typically run very high (0.6 to 0.9 for related topics)
         // We boost highly semantic concepts confidently to the top.
         if (similarity > 0.6) {
@@ -163,9 +180,9 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean) {
 
       return { ...emoji, score };
     })
-    .filter(e => e.score > 0.45)
-    .sort((a, b) => b.score! - a.score!)
-    .slice(0, 48);
+      .filter(e => e.score > 0.45)
+      .sort((a, b) => b.score! - a.score!)
+      .slice(0, 48);
 
     setResults(scored);
     setIsSearching(false);
