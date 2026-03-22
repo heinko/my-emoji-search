@@ -7,6 +7,9 @@ const nextConfig = {
     unoptimized: true,
   },
   serverExternalPackages: ['onnxruntime-node'],
+  outputFileTracingExcludes: {
+    '*': ['node_modules/onnxruntime-node/**/*'],
+  },
   eslint: {
     ignoreDuringBuilds: true,
   },
