@@ -23,7 +23,7 @@ export default function EmojiSearch() {
   const [searchTerm, setSearchTerm] = useState("")
   const [copiedEmoji, setCopiedEmoji] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [isSemantic, setIsSemantic] = useState(true)
+  const [isSemantic, setIsSemantic] = useState(false)
   const [showHint, setShowHint] = useState(true)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
@@ -41,13 +41,32 @@ export default function EmojiSearch() {
   // 2. Transformer Semantic Search Hook
   const { results, search, isSearching, modelLoading } = useSemanticSearch(allEmojis, isSemantic)
 
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
   // 3. Search triggers
   useEffect(() => {
-    const timer = setTimeout(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current)
+    }
+    searchTimeoutRef.current = setTimeout(() => {
       search(searchTerm)
-    }, 300)
-    return () => clearTimeout(timer)
+    }, 800)
+    
+    return () => {
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
+    }
   }, [searchTerm, search])
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
+      search(searchTerm)
+      
+      // Prevent mobile keyboard from staying open if desired
+      searchInputRef.current?.blur()
+    }
+  }
 
   const copyToClipboard = (emoji: string) => {
     navigator.clipboard.writeText(emoji)
@@ -87,6 +106,7 @@ export default function EmojiSearch() {
                 setSearchTerm(e.target.value)
                 if (showHint) setShowHint(false)
               }}
+              onKeyDown={handleKeyDown}
               autoComplete="off"
               spellCheck={false}
             />

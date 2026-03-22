@@ -115,29 +115,29 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean) {
     const scored = allEmojis.map(emoji => {
       let score = 0;
       
+      const myNameLower = emoji.myName ? emoji.myName.toLowerCase() : "";
+      const enNameLower = emoji.enName ? emoji.enName.toLowerCase() : "";
+      
       // Exact Name/Keyword Match (Highest priority)
       if (
-        emoji.myName.toLowerCase() === lowerQuery || 
-        emoji.enName.toLowerCase() === lowerQuery ||
-        emoji.keywords.some(k => k.toLowerCase() === lowerQuery)
+        (myNameLower && myNameLower === lowerQuery) || 
+        (enNameLower && enNameLower === lowerQuery) ||
+        (emoji.keywords && emoji.keywords.some(k => k.toLowerCase() === lowerQuery))
       ) {
         score += 2.0;
       }
 
       // Full Substring Match (Strong boost)
       if (
-        emoji.myName.toLowerCase().includes(lowerQuery) || 
-        emoji.enName.toLowerCase().includes(lowerQuery) ||
-        emoji.keywords.some(k => k.toLowerCase().includes(lowerQuery))
+        (myNameLower && myNameLower.includes(lowerQuery)) || 
+        (enNameLower && enNameLower.includes(lowerQuery)) ||
+        (emoji.keywords && emoji.keywords.some(k => k.toLowerCase().includes(lowerQuery)))
       ) {
         score += 1.0;
       }
 
       // Proportional Syllable Match (Medium boost for Burmese compound logic)
-      const emojiSyllables = Array.from(new Set([
-        ...sylbreak(emoji.myName.toLowerCase()), 
-        ...emoji.keywords.flatMap(k => sylbreak(k.toLowerCase()))
-      ]));
+      const emojiSyllables = emoji.syllables || [];
       
       let matchedSyllables = 0;
       for (const qs of querySyllables) {
