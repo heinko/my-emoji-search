@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useSemanticSearch } from "@/hooks/use-semantic-search"
+import { toast } from "sonner"
 
 export default function EmojiSearch() {
   const [allEmojis, setAllEmojis] = useState<EmojiItem[]>([])
@@ -60,9 +61,21 @@ export default function EmojiSearch() {
     }
   }
 
-  const copyToClipboard = (emoji: string) => {
+  const copyToClipboard = (emoji: string, displayName: string) => {
     navigator.clipboard.writeText(emoji)
     setCopiedEmoji(emoji)
+    toast.success(
+      <div className="flex items-center gap-3">
+        <span className="text-2xl">{emoji}</span>
+        <div className="flex flex-col">
+          <span className="font-medium">Copied!</span>
+          <span className="text-sm text-muted-foreground">{displayName}</span>
+        </div>
+      </div>,
+      {
+        duration: 2000,
+      }
+    )
     setTimeout(() => setCopiedEmoji(null), 1500)
   }
 
@@ -85,7 +98,7 @@ export default function EmojiSearch() {
               ref={searchInputRef}
               type="text"
               disabled={isLoading}
-              placeholder="ဗမာလို ရှာကြည့်ပါ... (Search in Burmese or English)"
+              placeholder="မြန်မာလို ရှာဖွေပါ... (ဥပမာ - ပျော်ရွှင်ခြင်း)"
               className={cn(
                 "pl-12 pr-4 py-6 text-lg rounded-2xl border-2 transition-all duration-300",
                 "bg-card shadow-lg focus:shadow-xl",
@@ -153,12 +166,12 @@ export default function EmojiSearch() {
             <div className="flex items-center gap-1">
               <Sparkles className="h-5 w-5 text-primary animate-bounce-soft" />
               <span className="text-muted-foreground">
-                ဗမာလို ရှာကြည့်ပါ (Start typing to search)
+                စာရိုက်ပြီး စတင်ရှာဖွေပါ
               </span>
               <Sparkles className="h-5 w-5 text-primary animate-bounce-soft" style={{ animationDelay: "0.5s" }} />
             </div>
             <div className="flex flex-wrap justify-center gap-2 text-sm text-muted-foreground/60 max-w-md">
-              {["ပျော်ရွှင်", "ဝမ်းနည်း", "အားကစား", "မြန်မာ"].map(word => (
+              {["ချစ်ခြင်း", "ပျော်ရွှင်ခြင်း", "အစားအသောက်", "တိရစ္ဆာန်"].map(word => (
                 <button 
                   key={word}
                   onClick={() => setSearchTerm(word)}
@@ -184,13 +197,13 @@ export default function EmojiSearch() {
             </span>
           </div>
           
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 md:gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4">
             {results.map((emoji, idx) => (
               <EmojiCard
                 key={`${emoji.emoji}-${idx}`}
                 emoji={emoji}
                 isCopied={copiedEmoji === emoji.emoji}
-                onCopy={copyToClipboard}
+                onCopy={(e, name) => copyToClipboard(e, name)}
                 delay={Math.min(idx * 0.02, 0.5)}
               />
             ))}
@@ -220,7 +233,7 @@ export default function EmojiSearch() {
 function EmojiCard({ emoji, isCopied, onCopy, delay }: { 
   emoji: EmojiItem; 
   isCopied: boolean; 
-  onCopy: (emoji: string) => void; 
+  onCopy: (emoji: string, displayName: string) => void; 
   delay: number 
 }) {
   const [isHovered, setIsHovered] = useState(false)
@@ -228,19 +241,19 @@ function EmojiCard({ emoji, isCopied, onCopy, delay }: {
   return (
     <button
       className={cn(
-        "group relative flex flex-col items-center justify-center p-3 rounded-2xl transition-all duration-200",
+        "group relative flex flex-col items-center justify-center p-2.5 rounded-2xl transition-all duration-200 min-h-[110px]",
         "bg-secondary/50 hover:bg-primary hover:shadow-lg",
         "active:scale-95 touch-manipulation",
         isCopied && "bg-primary ring-2 ring-primary ring-offset-2",
         "animate-pop-in"
       )}
       style={{ animationDelay: `${delay}s` }}
-      onClick={() => onCopy(emoji.emoji)}
+      onClick={() => onCopy(emoji.emoji, emoji.displayName)}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
       <span className={cn(
-        "text-3xl md:text-4xl transition-transform duration-200",
+        "text-4xl md:text-5xl transition-transform duration-200",
         isHovered && "scale-110",
         isCopied && "animate-wiggle"
       )}>
@@ -248,16 +261,18 @@ function EmojiCard({ emoji, isCopied, onCopy, delay }: {
       </span>
       
       <span className={cn(
-        "text-[10px] mt-2 line-clamp-1 text-center transition-colors font-medium",
+        "text-xs mt-2 line-clamp-2 text-center transition-colors font-medium px-0.5",
         "text-muted-foreground group-hover:text-primary-foreground",
         isCopied && "text-primary-foreground"
-      )}>
+      )}
+      style={{ lineHeight: '1.7em' }}
+      >
         {emoji.displayName}
       </span>
 
       {isCopied && (
-        <div className="absolute -top-1 -right-1 w-5 h-5 bg-accent text-accent-foreground rounded-full flex items-center justify-center shadow-sm animate-pop-in">
-          <Check className="h-3 w-3" />
+        <div className="absolute -top-1 -right-1 w-6 h-6 bg-accent text-accent-foreground rounded-full flex items-center justify-center shadow-sm animate-pop-in">
+          <Check className="h-3.5 w-3.5" />
         </div>
       )}
     </button>
