@@ -32,13 +32,13 @@ export default function Home() {
         <div className="max-w-2xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 bg-card/80 backdrop-blur-sm px-4 py-2 rounded-full border border-border mb-6 animate-slide-up">
             <span className="text-lg">{"🇲🇲"}</span>
-            <span className="text-sm font-medium text-muted-foreground">Burmese Emoji Finder</span>
+            <span className="text-sm font-medium text-muted-foreground">Emoji Finder</span>
           </div>
-          
+
           <h1 className="text-4xl md:text-6xl font-bold text-foreground tracking-tight mb-4 text-balance animate-slide-up" style={{ animationDelay: "0.1s" }}>
             Find the Perfect Emoji
           </h1>
-          
+
           <p className="text-lg md:text-xl text-muted-foreground max-w-md mx-auto animate-slide-up" style={{ animationDelay: "0.2s" }}>
             Search using Burmese text and discover emojis that match your feelings
           </p>
