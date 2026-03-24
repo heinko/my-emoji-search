@@ -30,6 +30,16 @@ function cosineSimilarity(v1: number[] | Float32Array, v2: number[] | Float32Arr
   return dotProduct / denominator;
 }
 
+function getPercentile(values: number[], percentile: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.floor((sorted.length - 1) * percentile))
+  );
+  return sorted[index];
+}
+
 export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean) {
   const [results, setResults] = useState<EmojiItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -78,6 +88,23 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean) {
       } finally {
         isExtracting.current = false;
       }
+    }
+
+    const semanticScores = new Map<string, number>();
+    let semanticFloor = 0;
+    let semanticCeiling = 0;
+
+    if (isSemantic && queryVector) {
+      const similarities = allEmojis
+        .filter(emoji => emoji.embedding && emoji.embedding.length > 0)
+        .map(emoji => {
+          const similarity = cosineSimilarity(queryVector!, emoji.embedding!);
+          semanticScores.set(emoji.emoji, similarity);
+          return similarity;
+        });
+
+      semanticFloor = getPercentile(similarities, 0.85);
+      semanticCeiling = getPercentile(similarities, 0.995);
     }
 
     // 2. Score Emojis
@@ -135,14 +162,15 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean) {
 
       // Semantic Similarity (The Modern Approach)
       if (isSemantic && queryVector && emoji.embedding && emoji.embedding.length > 0) {
-        const similarity = cosineSimilarity(queryVector, emoji.embedding);
+        const similarity = semanticScores.get(emoji.emoji) ?? 0;
+        const semanticRange = Math.max(semanticCeiling - semanticFloor, 1e-6);
 
-        // Multi-Lingual Transformer similarities typically run very high (0.6 to 0.9 for related topics)
-        // We boost highly semantic concepts confidently to the top.
-        if (similarity > 0.6) {
-          score += similarity * 3.0;
-        } else if (similarity > 0.45) {
-          score += similarity * 1.5;
+        if (similarity > semanticFloor) {
+          const normalized = Math.min(
+            1,
+            Math.max(0, (similarity - semanticFloor) / semanticRange)
+          );
+          score += normalized * 3.2;
         }
       }
 

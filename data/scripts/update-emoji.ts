@@ -6,7 +6,7 @@ import { pipeline, env } from '@huggingface/transformers';
 env.allowLocalModels = false;
 env.allowRemoteModels = true;
 
-const MODEL_NAME = 'Xenova/paraphrase-multilingual-MiniLM-L12-v2';
+const MODEL_NAME = 'intfloat/multilingual-e5-small';
 
 const UNICODE_VERSION = '16.0';
 const EMOJI_TEST_URL = `https://unicode.org/Public/emoji/${UNICODE_VERSION}/emoji-test.txt`;
@@ -27,6 +27,23 @@ interface EmojiEntry {
 interface LocalizedEntry {
   name: string;
   keywords: string[];
+}
+
+function buildPassageText(
+  emoji: EmojiEntry,
+  myName: string,
+  myKeywords: string[]
+): string {
+  const keywordText = myKeywords.length > 0 ? myKeywords.join(', ') : emoji.name;
+  return [
+    'passage:',
+    `emoji ${emoji.emoji}.`,
+    `Burmese name ${myName}.`,
+    `English name ${emoji.name}.`,
+    `Keywords ${keywordText}.`,
+    `Category ${emoji.group}.`,
+    `Subcategory ${emoji.subgroup}.`,
+  ].join(' ');
 }
 
 function parseCsvLine(line: string): string[] {
@@ -196,7 +213,7 @@ async function main() {
       const myName = myCustom.name || myLocalized.name || base.name;
       const myKeywords = Array.from(new Set([...myLocalized.keywords, ...(myCustom.keywords || [])]));
 
-      const textToEmbed = `${myName}. ${base.name}. ${myKeywords.join(', ')}`;
+      const textToEmbed = buildPassageText(base, myName, myKeywords);
       const output = await extractor(textToEmbed, { pooling: 'mean', normalize: true });
       const embedding = Array.from(output.data) as number[];
 

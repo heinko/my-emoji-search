@@ -50,6 +50,14 @@ export default function EmojiSearch() {
     }
   }, [searchTerm, search])
 
+  useEffect(() => {
+    if (!searchTerm.trim()) return
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current)
+    }
+    search(searchTerm)
+  }, [isSemantic, searchTerm, search])
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault()
@@ -145,7 +153,7 @@ export default function EmojiSearch() {
                     <Info className="h-3.5 w-3.5 text-muted-foreground" />
                   </TooltipTrigger>
                   <TooltipContent className="max-w-xs">
-                    <p>Uses an embedded AI sentence-transformer (MiniLM) for genuine cross-lingual deep meaning.</p>
+                    <p>Uses a remote multilingual embedding model to improve cross-lingual meaning matching.</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

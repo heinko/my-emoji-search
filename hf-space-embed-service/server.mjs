@@ -4,7 +4,7 @@ import { pipeline, env } from '@huggingface/transformers';
 const PORT = Number(process.env.PORT || 7860);
 const HOST = process.env.HOST || '0.0.0.0';
 const MODEL_NAME =
-  process.env.MODEL_NAME || 'Xenova/paraphrase-multilingual-MiniLM-L12-v2';
+  process.env.MODEL_NAME || 'intfloat/multilingual-e5-small';
 const ACCESS_TOKEN = process.env.SERVICE_TOKEN;
 
 env.allowLocalModels = false;
@@ -57,7 +57,7 @@ const server = createServer(async (request, response) => {
 
   try {
     const extractor = await getExtractor();
-    const output = await extractor(q.toLowerCase(), {
+    const output = await extractor(`query: ${q.toLowerCase()}`, {
       pooling: 'mean',
       normalize: true,
     });

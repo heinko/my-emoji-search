@@ -7,13 +7,13 @@ sdk: docker
 app_port: 7860
 short_description: Embedding API for Burmese emoji semantic search
 models:
-  - Xenova/paraphrase-multilingual-MiniLM-L12-v2
+  - intfloat/multilingual-e5-small
 ---
 
 # Hugging Face Space Embed Service
 
 This folder is a Docker-based Hugging Face Space that serves the same
-`Xenova/paraphrase-multilingual-MiniLM-L12-v2` embedding model used by the app.
+`intfloat/multilingual-e5-small` embedding model used by the app.
 
 ## Endpoints
 
