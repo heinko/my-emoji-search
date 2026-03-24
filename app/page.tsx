@@ -32,15 +32,11 @@ export default function Home() {
         <div className="max-w-2xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 bg-card/80 backdrop-blur-sm px-4 py-2 rounded-full border border-border mb-6 animate-slide-up">
             <span className="text-lg">{"🇲🇲"}</span>
-            <span className="text-sm font-medium text-muted-foreground">Emoji Search</span>
+            <span className="text-sm font-medium text-muted-foreground">အီမိုဂျီ ရှာမယ်</span>
           </div>
 
-          <h1 className="text-4xl md:text-6xl font-bold text-foreground tracking-tight mb-4 text-balance animate-slide-up" style={{ animationDelay: "0.1s", lineHeight: "1.6" }}>
-            သင့်စိတ်နဲ့ကိုက်ညီတဲ့ အီမိုဂျီ ရှာပါ
-          </h1>
-
-          <p className="text-lg md:text-xl text-muted-foreground max-w-md mx-auto animate-slide-up" style={{ animationDelay: "0.2s" }}>
-            မြန်မာလို ရိုက်ထည့်ပြီး သင့်ခံစားချက်နဲ့ လိုက်ဖက်တဲ့ အီမိုဂျီ တွေကို အလွယ်တကူ ရှာဖွေလိုက်ပါ
+          <p className="text-lg md:text-xl text-muted-foreground max-w-md mx-auto animate-slide-up" style={{ animationDelay: "0.2s" , lineHeight: "1.7" }}>
+            သင့်ခံစားချက်နဲ့ လိုက်ဖက်တဲ့ အီမိုဂျီ တွေကို အလွယ်တကူ ရှာဖွေလိုက်ပါ
           </p>
         </div>
       </header>
@@ -56,7 +52,7 @@ export default function Home() {
       <footer className="py-6 px-4 border-t border-border/50 bg-card/30 backdrop-blur-sm">
         <div className="max-w-2xl mx-auto text-center">
           <p className="text-sm text-muted-foreground">
-            အီမိုဂျီပေါင်း ထောင်ချီကို မြန်မာလို ရိုက်ရှာပြီး အလွယ်တကူ ကူးယူနိုင်ပါပြီ
+            အီမိုဂျီပေါင်း ၃၇၈၂ ခု ပါဝင်ပြီး အမြဲတမ်း အပ်ဒိတ်ဖြစ်နေပါတယ်!
           </p>
         </div>
       </footer>

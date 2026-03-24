@@ -25,3 +25,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local test artifacts
+.next-proxy.log
+.next-start.log
+space-service.log
+*.pid
+
+# Hugging Face Space workspace
+/hf-space-embed-service/node_modules/
