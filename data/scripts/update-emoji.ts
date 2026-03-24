@@ -29,19 +29,58 @@ interface LocalizedEntry {
   keywords: string[];
 }
 
+function parseCsvLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      result.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current);
+  return result;
+}
+
 function parseLocaleCsv(filePath: string): Record<string, LocalizedEntry> {
   if (!fs.existsSync(filePath)) return {};
   const content = fs.readFileSync(filePath, 'utf-8');
   const lines = content.split(/\r?\n/);
   const data: Record<string, LocalizedEntry> = {};
+  
+  const header = lines[0] || '';
+  const isNewFormat = header.toLowerCase().includes('english name');
+
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
-    const matches = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
-    if (!matches || matches.length < 4) continue;
-    const hex = matches[0].trim();
-    const name = matches[2].replace(/^"|"$/g, '').replace(/""/g, '"').trim();
-    const keywordsStr = matches[3].replace(/^"|"$/g, '').replace(/""/g, '"');
+    
+    const cols = parseCsvLine(line);
+    if (cols.length < 4) continue;
+    
+    const hex = cols[0].trim();
+    let name = '';
+    let keywordsStr = '';
+
+    if (isNewFormat && cols.length >= 5) {
+      name = cols[3].trim();
+      keywordsStr = cols[4].trim();
+    } else {
+      name = cols[2].trim();
+      keywordsStr = cols[3].trim();
+    }
+    
     const keywords = keywordsStr.split(/[,;]/).map(k => k.trim()).filter(Boolean);
     data[hex] = { name, keywords };
   }
