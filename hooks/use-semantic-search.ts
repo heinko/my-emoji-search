@@ -1,5 +1,5 @@
 import { startTransition, useState, useEffect, useCallback, useRef } from 'react';
-import { type EmojiItem } from '@/lib/emoji-data';
+import { loadEmojiEmbeddings, mergeEmojiEmbeddings, type EmojiItem } from '@/lib/emoji-data';
 import { type OppaWordLexicon } from '@/lib/oppa-word';
 import {
   analyzeSearchQuery,
@@ -41,16 +41,41 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean) {
   const latestQuery = useRef("");
   const resultCacheRef = useRef(new Map<string, EmojiItem[]>());
   const embeddingCacheRef = useRef(new Map<string, number[]>());
+  const semanticEmojisRef = useRef<EmojiItem[] | null>(null);
 
   useEffect(() => {
-    // The model is now hosted on the server, so we don't need to preload it locally.
-    if (isSemantic) setModelLoading(false);
-  }, [isSemantic]);
+    semanticEmojisRef.current = null;
+  }, [allEmojis]);
 
   useEffect(() => {
     if (allEmojis.length === 0) return;
     lexiconRef.current = buildSearchLexiconFromEmojiData(allEmojis);
   }, [allEmojis]);
+
+  const ensureSemanticDataset = useCallback(async () => {
+    if (semanticEmojisRef.current) {
+      return semanticEmojisRef.current;
+    }
+
+    setModelLoading(true);
+
+    try {
+      const embeddingMap = await loadEmojiEmbeddings();
+      const merged = mergeEmojiEmbeddings(allEmojis, embeddingMap);
+      semanticEmojisRef.current = merged;
+      return merged;
+    } finally {
+      setModelLoading(false);
+    }
+  }, [allEmojis]);
+
+  useEffect(() => {
+    if (!isSemantic || allEmojis.length === 0 || semanticEmojisRef.current) return;
+
+    void ensureSemanticDataset().catch((error) => {
+      console.error('Failed to preload semantic emoji vectors', error);
+    });
+  }, [allEmojis.length, ensureSemanticDataset, isSemantic]);
 
   const search = useCallback(async (query: string) => {
     latestQuery.current = query;
@@ -79,11 +104,13 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean) {
     const queryAnalysis = analyzeSearchQuery(lowerQuery, lexicon);
 
     let semanticSignal;
+    let searchDataset = allEmojis;
     if (isSemantic) {
       if (isExtracting.current) return; // Prevent concurrent API fetching queue
 
       try {
         isExtracting.current = true;
+        searchDataset = await ensureSemanticDataset();
         const embeddings = await Promise.all(
           queryAnalysis.semanticViews.map(async (view) => {
             const cachedVector = embeddingCacheRef.current.get(view.text);
@@ -109,7 +136,7 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean) {
           return;
         }
 
-        semanticSignal = buildSemanticSignal(allEmojis, embeddings);
+        semanticSignal = buildSemanticSignal(searchDataset, embeddings);
       } catch (e) {
         console.error("Semantic API extraction error", e);
       } finally {
@@ -118,13 +145,13 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean) {
     }
 
     await yieldToBrowser();
-    const scored = rankEmojiResults(allEmojis, lowerQuery, queryAnalysis, semanticSignal);
+    const scored = rankEmojiResults(searchDataset, lowerQuery, queryAnalysis, semanticSignal);
     resultCacheRef.current.set(cacheKey, scored);
     startTransition(() => {
       setResults(scored);
     });
     setIsSearching(false);
-  }, [allEmojis, isSemantic]);
+  }, [allEmojis, ensureSemanticDataset, isSemantic]);
 
   return { results, search, isSearching, modelLoading };
 }

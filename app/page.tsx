@@ -1,3 +1,4 @@
+import Link from "next/link"
 import EmojiSearch from "@/components/emoji-search"
 
 export default function Home() {
@@ -32,11 +33,11 @@ export default function Home() {
         <div className="max-w-2xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 bg-card/80 backdrop-blur-sm px-4 py-2 rounded-full border border-border mb-6 animate-slide-up">
             <span className="text-lg">{"🇲🇲"}</span>
-            <span className="text-sm font-medium text-muted-foreground">အီမိုဂျီ ရှာမယ်</span>
+            <span className="text-sm font-medium text-muted-foreground">Emoji Search</span>
           </div>
 
-          <p className="text-lg md:text-xl text-muted-foreground max-w-md mx-auto animate-slide-up" style={{ animationDelay: "0.2s" , lineHeight: "1.7" }}>
-            သင့်ခံစားချက်နဲ့ လိုက်ဖက်တဲ့ အီမိုဂျီ တွေကို အလွယ်တကူ ရှာဖွေလိုက်ပါ
+          <p className="text-md md:text-md text-muted-foreground max-w-md mx-auto animate-slide-up" style={{ animationDelay: "0.2s" , lineHeight: "1.7" }}>
+            အီမိုဂျီတွေကို မြန်မာလို ရှာမယ်...
           </p>
         </div>
       </header>
@@ -50,10 +51,18 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="py-6 px-4 border-t border-border/50 bg-card/30 backdrop-blur-sm">
-        <div className="max-w-2xl mx-auto text-center">
+        <div className="max-w-2xl mx-auto flex flex-col items-center gap-3 text-center">
           <p className="text-sm text-muted-foreground">
-            အီမိုဂျီပေါင်း ၃၇၈၂ ခု ပါဝင်ပြီး Unicode ၁၆ ဗားရှင်းအထိ ထောက်ပံ့ထားသည်။ အားလုံးကို အခမဲ့ အသုံးပြုနိုင်ပါတယ်။ သင့်ရဲ့ အကြံပြုချက်တွေကို GitHub မှာ ပြောပြနိုင်ပါတယ်။
+            Made for peace, love, and a sprinkle of fun. ❤️✨
           </p>
+          <div className="flex items-center gap-4 text-sm">
+            <Link href="/about" className="text-muted-foreground transition-colors hover:text-foreground">
+              About
+            </Link>
+            <Link href="/credits" className="text-muted-foreground transition-colors hover:text-foreground">
+              Credits
+            </Link>
+          </div>
         </div>
       </footer>
     </main>

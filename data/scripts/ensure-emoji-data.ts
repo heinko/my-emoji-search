@@ -4,6 +4,7 @@ import path from 'path';
 const REQUIRED_FILES = [
   'public/data/emoji/emoji-index-my.json',
   'public/data/emoji/emoji-index-en.json',
+  'public/data/emoji/emoji-vectors-my.json',
 ];
 
 const missingFiles = REQUIRED_FILES.filter((filePath) => {
