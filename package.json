@@ -3,9 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "next build",
+    "build": "npm run ensure-emoji-data && next build",
     "check-search": "tsx data/scripts/check-search-relevance.ts",
     "dev": "next dev",
+    "ensure-emoji-data": "tsx data/scripts/ensure-emoji-data.ts",
     "lint": "eslint .",
     "update-emoji": "tsx data/scripts/update-emoji.ts",
     "start": "next start"

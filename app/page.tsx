@@ -52,7 +52,7 @@ export default function Home() {
       <footer className="py-6 px-4 border-t border-border/50 bg-card/30 backdrop-blur-sm">
         <div className="max-w-2xl mx-auto text-center">
           <p className="text-sm text-muted-foreground">
-            အီမိုဂျီပေါင်း ၃၇၈၂ ခု ပါဝင်ပြီး အမြဲတမ်း အပ်ဒိတ်ဖြစ်နေပါတယ်!
+            အီမိုဂျီပေါင်း ၃၇၈၂ ခု ပါဝင်ပြီး Unicode ၁၆ ဗားရှင်းအထိ ထောက်ပံ့ထားသည်။ အားလုံးကို အခမဲ့ အသုံးပြုနိုင်ပါတယ်။ သင့်ရဲ့ အကြံပြုချက်တွေကို GitHub မှာ ပြောပြနိုင်ပါတယ်။
           </p>
         </div>
       </footer>
