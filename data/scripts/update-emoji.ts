@@ -103,7 +103,11 @@ function parseExtraKeywordsCsv(filePath: string): Record<string, ExtraKeywordsEn
     if (cols.length < 3) continue;
 
     const hex = cols[0].trim();
-    const keywords = cols[2]
+    // Support both the current 4-column catalog format
+    // (Hex, Emoji, English Name, Extra Keywords)
+    // and older 3-column variants where keywords were the last column.
+    const keywordColumn = cols.length >= 4 ? cols[3] : cols[2];
+    const keywords = keywordColumn
       .split(/[,;]/)
       .map((keyword) => keyword.trim())
       .filter(Boolean);
