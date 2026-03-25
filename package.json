@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "next build",
+    "check-search": "tsx data/scripts/check-search-relevance.ts",
     "dev": "next dev",
     "lint": "eslint .",
     "update-emoji": "tsx data/scripts/update-emoji.ts",

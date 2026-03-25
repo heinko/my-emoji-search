@@ -1,6 +1,12 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { sylbreak } from '@/lib/sylbreak';
+import { startTransition, useState, useEffect, useCallback, useRef } from 'react';
 import { type EmojiItem } from '@/lib/emoji-data';
+import { type OppaWordLexicon } from '@/lib/oppa-word';
+import {
+  analyzeSearchQuery,
+  buildSearchLexiconFromEmojiData,
+  buildSemanticSignal,
+  rankEmojiResults,
+} from '@/lib/search-ranking';
 
 // Fetch the embedding generation from our Next.js API route
 async function fetchEmbeddingFromAPI(query: string): Promise<number[]> {
@@ -16,28 +22,14 @@ async function fetchEmbeddingFromAPI(query: string): Promise<number[]> {
   throw new Error('Invalid embedding format returned from API');
 }
 
-function cosineSimilarity(v1: number[] | Float32Array, v2: number[] | Float32Array): number {
-  let dotProduct = 0;
-  let mA = 0;
-  let mB = 0;
-  for (let i = 0; i < v1.length; i++) {
-    dotProduct += v1[i] * v2[i];
-    mA += v1[i] * v1[i];
-    mB += v2[i] * v2[i];
-  }
-  const denominator = Math.sqrt(mA) * Math.sqrt(mB);
-  if (denominator === 0) return 0;
-  return dotProduct / denominator;
+function createSearchCacheKey(query: string, isSemantic: boolean): string {
+  return `${isSemantic ? 'semantic' : 'lexical'}:${query}`;
 }
 
-function getPercentile(values: number[], percentile: number): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const index = Math.min(
-    sorted.length - 1,
-    Math.max(0, Math.floor((sorted.length - 1) * percentile))
-  );
-  return sorted[index];
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
 }
 
 export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean) {
@@ -45,34 +37,69 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean) {
   const [isSearching, setIsSearching] = useState(false);
   const [modelLoading, setModelLoading] = useState(false);
   const isExtracting = useRef(false);
+  const lexiconRef = useRef<OppaWordLexicon | null>(null);
   const latestQuery = useRef("");
+  const resultCacheRef = useRef(new Map<string, EmojiItem[]>());
+  const embeddingCacheRef = useRef(new Map<string, number[]>());
 
   useEffect(() => {
     // The model is now hosted on the server, so we don't need to preload it locally.
     if (isSemantic) setModelLoading(false);
   }, [isSemantic]);
 
+  useEffect(() => {
+    if (allEmojis.length === 0) return;
+    lexiconRef.current = buildSearchLexiconFromEmojiData(allEmojis);
+  }, [allEmojis]);
+
   const search = useCallback(async (query: string) => {
     latestQuery.current = query;
     if (!query.trim()) {
-      setResults([]);
+      startTransition(() => {
+        setResults([]);
+      });
+      setIsSearching(false);
+      return;
+    }
+
+    const lowerQuery = query.toLowerCase();
+    const cacheKey = createSearchCacheKey(lowerQuery, isSemantic);
+    const cachedResults = resultCacheRef.current.get(cacheKey);
+
+    if (cachedResults) {
+      startTransition(() => {
+        setResults(cachedResults);
+      });
       setIsSearching(false);
       return;
     }
 
     setIsSearching(true);
-    const lowerQuery = query.toLowerCase();
-    const isBurmeseQuery = /[\u1000-\u109F]/.test(lowerQuery);
-    const querySyllables = isBurmeseQuery ? sylbreak(lowerQuery) : [];
+    const lexicon = lexiconRef.current ?? buildSearchLexiconFromEmojiData(allEmojis);
+    const queryAnalysis = analyzeSearchQuery(lowerQuery, lexicon);
 
-    // 1. Generate Query Vector if Semantic Mode
-    let queryVector: number[] | null = null;
+    let semanticSignal;
     if (isSemantic) {
       if (isExtracting.current) return; // Prevent concurrent API fetching queue
 
       try {
         isExtracting.current = true;
-        const vector = await fetchEmbeddingFromAPI(lowerQuery);
+        const embeddings = await Promise.all(
+          queryAnalysis.semanticViews.map(async (view) => {
+            const cachedVector = embeddingCacheRef.current.get(view.text);
+            const vector = cachedVector
+              ? cachedVector
+              : await fetchEmbeddingFromAPI(view.text).then((resolvedVector) => {
+                  embeddingCacheRef.current.set(view.text, resolvedVector);
+                  return resolvedVector;
+                });
+
+            return {
+              ...view,
+              vector,
+            };
+          })
+        );
 
         // If the query changed rapidly while awaiting network, abort this stale execution
         if (latestQuery.current !== query) {
@@ -82,7 +109,7 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean) {
           return;
         }
 
-        queryVector = vector;
+        semanticSignal = buildSemanticSignal(allEmojis, embeddings);
       } catch (e) {
         console.error("Semantic API extraction error", e);
       } finally {
@@ -90,97 +117,12 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean) {
       }
     }
 
-    const semanticScores = new Map<string, number>();
-    let semanticFloor = 0;
-    let semanticCeiling = 0;
-
-    if (isSemantic && queryVector) {
-      const similarities = allEmojis
-        .filter(emoji => emoji.embedding && emoji.embedding.length > 0)
-        .map(emoji => {
-          const similarity = cosineSimilarity(queryVector!, emoji.embedding!);
-          semanticScores.set(emoji.emoji, similarity);
-          return similarity;
-        });
-
-      semanticFloor = getPercentile(similarities, 0.85);
-      semanticCeiling = getPercentile(similarities, 0.995);
-    }
-
-    // 2. Score Emojis
-    const scored = allEmojis.map(emoji => {
-      let score = 0;
-
-      const myNameLower = emoji.myName ? emoji.myName.toLowerCase() : "";
-      const enNameLower = emoji.enName ? emoji.enName.toLowerCase() : "";
-
-      // Exact Name/Keyword Match (Highest priority)
-      if (
-        (myNameLower && myNameLower === lowerQuery) ||
-        (enNameLower && enNameLower === lowerQuery) ||
-        (emoji.keywords && emoji.keywords.some(k => k.toLowerCase() === lowerQuery))
-      ) {
-        score += 2.0;
-      }
-
-      // Full Substring Match (Strong boost)
-      if (
-        (myNameLower && myNameLower.includes(lowerQuery)) ||
-        (enNameLower && enNameLower.includes(lowerQuery)) ||
-        (emoji.keywords && emoji.keywords.some(k => k.toLowerCase().includes(lowerQuery)))
-      ) {
-        score += 1.0;
-      }
-
-      if (isBurmeseQuery) {
-        // Proportional Syllable Match (Medium boost for Burmese compound logic)
-        const emojiSyllables = emoji.syllables || [];
-        let matchedSyllables = 0;
-        for (const qs of querySyllables) {
-          if (emojiSyllables.includes(qs)) matchedSyllables++;
-        }
-
-        if (querySyllables.length > 0) {
-          score += (matchedSyllables / querySyllables.length) * 0.6;
-        }
-      } else {
-        // English Word Match (Boost for English Queries)
-        const queryWords = lowerQuery.split(/\s+/).filter(Boolean);
-        let matchedWords = 0;
-        if (queryWords.length > 0) {
-          for (const qw of queryWords) {
-            if (
-              (enNameLower && enNameLower.includes(qw)) ||
-              (emoji.keywords && emoji.keywords.some(k => k.toLowerCase().includes(qw)))
-            ) {
-              matchedWords++;
-            }
-          }
-          score += (matchedWords / queryWords.length) * 0.8;
-        }
-      }
-
-      // Semantic Similarity (The Modern Approach)
-      if (isSemantic && queryVector && emoji.embedding && emoji.embedding.length > 0) {
-        const similarity = semanticScores.get(emoji.emoji) ?? 0;
-        const semanticRange = Math.max(semanticCeiling - semanticFloor, 1e-6);
-
-        if (similarity > semanticFloor) {
-          const normalized = Math.min(
-            1,
-            Math.max(0, (similarity - semanticFloor) / semanticRange)
-          );
-          score += normalized * 3.2;
-        }
-      }
-
-      return { ...emoji, score };
-    })
-      .filter(e => e.score > 0.45)
-      .sort((a, b) => b.score! - a.score!)
-      .slice(0, 48);
-
-    setResults(scored);
+    await yieldToBrowser();
+    const scored = rankEmojiResults(allEmojis, lowerQuery, queryAnalysis, semanticSignal);
+    resultCacheRef.current.set(cacheKey, scored);
+    startTransition(() => {
+      setResults(scored);
+    });
     setIsSearching(false);
   }, [allEmojis, isSemantic]);
 

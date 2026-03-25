@@ -45,16 +45,18 @@ The build script in [data/scripts/update-emoji.ts](/Users/heink/v0-burmese-emoji
 
 - Official Unicode emoji definitions
 - CLDR Burmese annotation data
-- Manual overrides from [data/locales/my.csv](/Users/heink/v0-burmese-emoji-search-su/data/locales/my.csv)
+- Contributed extra keywords from [data/locales/my-extra-keywords.csv](/Users/heink/v0-burmese-emoji-search-su/data/locales/my-extra-keywords.csv)
 
 ### Build Flow
 
 1. Fetch Unicode emoji metadata and keep fully-qualified emoji entries.
 2. Fetch Myanmar CLDR annotations and merge them with any derived annotations.
-3. Merge local CSV overrides so project-specific Burmese names and keywords win when needed.
-4. Build a combined text string for each emoji using Burmese name, English name, and keywords.
-5. Run that text through `intfloat/multilingual-e5-small` using Transformers.js with the `passage:` prefix expected by E5 models.
-6. Save the 384-dimensional embedding beside the emoji metadata in `emoji-index-my.json`.
+3. Merge contributed extra Burmese keywords from `my-extra-keywords.csv` on top of CLDR annotations.
+4. Build an oppaWord-inspired Burmese lexicon from emoji names and keywords.
+5. Generate Burmese `wordTokens` plus a Burmese `searchTextMy` field for each emoji.
+6. Build a combined text string for each emoji using Burmese name, Burmese search text, English name, and keywords.
+7. Run that text through `intfloat/multilingual-e5-small` using Transformers.js with the `passage:` prefix expected by E5 models.
+8. Save the 384-dimensional embedding beside the emoji metadata in `emoji-index-my.json`.
 
 ### Output
 
@@ -97,21 +99,22 @@ Lexical ranking is always computed in the browser, even when semantic search is 
 ### Score Sources
 
 1. Exact match against Burmese name, English name, or keywords
-2. Substring match against those same fields
-3. Burmese syllable overlap using `sylbreak`
-4. English word overlap for non-Burmese queries
+2. Burmese word-token coverage using the app’s oppaWord-inspired segmenter
+3. `sylbreak` fallback only when Burmese word evidence is weak
+4. English token-aware word overlap for non-Burmese queries
 
-This approach keeps exact matches strong while still being forgiving for Burmese compound words.
+This approach keeps exact matches strong while letting Burmese compound queries benefit from word segmentation instead of only syllables.
 
 ## 4. Semantic Search
 
 When semantic mode is enabled:
 
-1. The client sends the lowercased query to `/api/embed`.
-2. [app/api/embed/route.ts](/Users/heink/v0-burmese-emoji-search-su/app/api/embed/route.ts) forwards the request to the Hugging Face Space.
-3. The Space service in [hf-space-embed-service/server.mjs](/Users/heink/v0-burmese-emoji-search-su/hf-space-embed-service/server.mjs) loads `intfloat/multilingual-e5-small`, sends the query with the `query:` prefix, and returns a 384-dimensional vector.
-4. The client compares that vector with each emoji embedding using cosine similarity.
-5. High semantic similarity boosts the lexical score instead of replacing it.
+1. The client builds query views from the original query and the oppaWord-segmented query.
+2. The client sends those lowercased query views to `/api/embed`.
+3. [app/api/embed/route.ts](/Users/heink/v0-burmese-emoji-search-su/app/api/embed/route.ts) forwards the request to the Hugging Face Space.
+4. The Space service in [hf-space-embed-service/server.mjs](/Users/heink/v0-burmese-emoji-search-su/hf-space-embed-service/server.mjs) loads `intfloat/multilingual-e5-small`, sends the query with the `query:` prefix, and returns a 384-dimensional vector.
+5. The client compares each query-view vector with each emoji embedding using cosine similarity and takes the strongest weighted signal.
+6. High semantic similarity boosts lexical evidence instead of replacing it, which helps reduce off-topic matches.
 
 This design avoids shipping a heavy transformer runtime to mobile browsers and avoids running large native dependencies inside Vercel serverless functions.
 
@@ -127,6 +130,20 @@ The project originally explored local inference inside the browser and then loca
 ## 6. Operational Notes
 
 - The browser caches the large emoji dataset in memory after load.
-- Semantic mode adds network latency only for the query embedding step.
+- Semantic mode adds network latency only for the query embedding step, even though it may embed multiple query views.
 - The Hugging Face Space can be swapped later by changing `EMBEDDING_SERVICE_URL`.
 - If the Space becomes private, `/api/embed` can forward a bearer token through `EMBEDDING_SERVICE_TOKEN`.
+
+## References
+
+Implemented sources:
+
+- [oppaWord](https://github.com/ye-kyaw-thu/oppaWord)
+- [sylbreak](https://github.com/ye-kyaw-thu/sylbreak)
+- [Multilingual E5 model card](https://huggingface.co/intfloat/multilingual-e5-small)
+- [Multilingual E5 technical report](https://arxiv.org/abs/2402.05672)
+
+Reviewed but not integrated:
+
+- [myWord](https://github.com/ye-kyaw-thu/myWord)
+- [NgaPi](https://github.com/ye-kyaw-thu/NgaPi)
