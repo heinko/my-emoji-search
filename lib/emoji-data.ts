@@ -24,12 +24,19 @@ export interface EmojiItem {
   wordTokens?: string[];
 }
 
+export interface EmojiVectorEntry {
+  codePoints: string;
+  embedding: number[];
+}
+
 function tokenizeEnglish(text: string): string[] {
   return (text.toLowerCase().match(/[a-z0-9]+(?:'[a-z0-9]+)?/g) ?? []).filter(Boolean);
 }
 
-// Cache the data in memory so we don't re-parse 31MB repeatedly when switching locales
+// Cache the lexical dataset in memory so we don't re-parse it repeatedly.
 let cachedEmojiData: EmojiItem[] | null = null;
+let cachedEmojiEmbeddingMap: Map<string, number[]> | null = null;
+let cachedEmojiEmbeddingPromise: Promise<Map<string, number[]>> | null = null;
 
 export async function loadEmojiData(): Promise<EmojiItem[]> {
   try {
@@ -38,8 +45,8 @@ export async function loadEmojiData(): Promise<EmojiItem[]> {
     if (cachedEmojiData) {
       rawData = JSON.parse(JSON.stringify(cachedEmojiData)); // deep copy to allow modifications
     } else {
-      // Always fetch the 'my' index because it contains the 384d semantic embeddings 
-      // and both enName and myName. The en-only index lacks embeddings and myanmar context.
+      // Fetch the Burmese lexical index. Semantic embeddings live in a separate file
+      // so the default browser load stays smaller unless semantic mode is enabled.
       const response = await fetch(`/data/emoji/emoji-index-my.json`);
       if (!response.ok) throw new Error(`Failed to fetch emoji data: ${response.statusText}`);
       rawData = await response.json();
@@ -112,4 +119,45 @@ export async function loadEmojiData(): Promise<EmojiItem[]> {
     console.error(`Failed to load emoji data`, error);
     return [];
   }
+}
+
+export async function loadEmojiEmbeddings(): Promise<Map<string, number[]>> {
+  if (cachedEmojiEmbeddingMap) {
+    return new Map(cachedEmojiEmbeddingMap);
+  }
+
+  if (cachedEmojiEmbeddingPromise) {
+    return cachedEmojiEmbeddingPromise.then((embeddingMap) => new Map(embeddingMap));
+  }
+
+  cachedEmojiEmbeddingPromise = (async () => {
+    const response = await fetch(`/data/emoji/emoji-vectors-my.json`);
+    if (!response.ok) throw new Error(`Failed to fetch emoji vectors: ${response.statusText}`);
+
+    const rawData = (await response.json()) as EmojiVectorEntry[];
+    cachedEmojiEmbeddingMap = new Map(
+      rawData
+        .filter((entry) => entry.codePoints && Array.isArray(entry.embedding))
+        .map((entry) => [entry.codePoints, entry.embedding])
+    );
+
+    return cachedEmojiEmbeddingMap;
+  })();
+
+  try {
+    const embeddingMap = await cachedEmojiEmbeddingPromise;
+    return new Map(embeddingMap);
+  } finally {
+    cachedEmojiEmbeddingPromise = null;
+  }
+}
+
+export function mergeEmojiEmbeddings(
+  emojis: EmojiItem[],
+  embeddingMap: Map<string, number[]>
+): EmojiItem[] {
+  return emojis.map((emoji) => ({
+    ...emoji,
+    embedding: embeddingMap.get(emoji.codePoints),
+  }));
 }

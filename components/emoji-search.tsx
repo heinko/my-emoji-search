@@ -177,7 +177,7 @@ export default function EmojiSearch() {
           </div>
           {modelLoading && (
             <span className="text-xs text-primary animate-pulse font-medium">
-              Loading AI Model...
+              Loading semantic index...
             </span>
           )}
         </div>
@@ -195,7 +195,7 @@ export default function EmojiSearch() {
               <Sparkles className="h-5 w-5 text-primary animate-bounce-soft" style={{ animationDelay: "0.5s" }} />
             </div>
             <div className="flex flex-wrap justify-center gap-2 text-sm text-muted-foreground/60 max-w-md">
-              {["ချစ်ခြင်း", "ပျော်ရွှင်ခြင်း", "အစားအသောက်", "တိရစ္ဆာန်"].map(word => (
+              {["ပင်လယ်ကမ်းခြေ", "ငြိမ်းချမ်းရေး", "အချစ်", "တိရစ္ဆာန်"].map(word => (
                 <button 
                   key={word}
                   onClick={() => setSearchTerm(word)}

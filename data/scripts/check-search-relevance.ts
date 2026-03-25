@@ -41,8 +41,13 @@ async function fetchEmbedding(text: string): Promise<number[]> {
 }
 
 function loadEmojiIndex(): EmojiItem[] {
-  const filePath = path.join(process.cwd(), 'public/data/emoji/emoji-index-my.json');
-  const rawData = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as EmojiItem[];
+  const indexFilePath = path.join(process.cwd(), 'public/data/emoji/emoji-index-my.json');
+  const vectorFilePath = path.join(process.cwd(), 'public/data/emoji/emoji-vectors-my.json');
+  const rawData = JSON.parse(fs.readFileSync(indexFilePath, 'utf-8')) as EmojiItem[];
+  const rawVectors = JSON.parse(
+    fs.readFileSync(vectorFilePath, 'utf-8')
+  ) as Array<{ codePoints: string; embedding: number[] }>;
+  const embeddingMap = new Map(rawVectors.map((entry) => [entry.codePoints, entry.embedding]));
   const lexicon = buildEmojiSearchLexicon(rawData);
 
   const enriched = rawData.map((emoji) => {
@@ -58,6 +63,7 @@ function loadEmojiIndex(): EmojiItem[] {
       enTokens: tokenizeEnglish(
         [emoji.enName, emoji.group, emoji.subgroup].filter(Boolean).join(' ')
       ),
+      embedding: embeddingMap.get(emoji.codePoints),
       isSkinToneVariant: skinToneMetadata.isSkinToneVariant,
       searchTextMy: metadata.searchTextMy,
       skinTone: skinToneMetadata.skinTone,

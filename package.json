@@ -9,6 +9,7 @@
     "ensure-emoji-data": "tsx data/scripts/ensure-emoji-data.ts",
     "lint": "eslint .",
     "update-emoji": "tsx data/scripts/update-emoji.ts",
+    "update-emoji:full": "tsx data/scripts/update-emoji.ts --full",
     "start": "next start"
   },
   "dependencies": {

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { createHash } from 'crypto';
 import { parseStringPromise } from 'xml2js';
 import { pipeline, env } from '@huggingface/transformers';
 import { buildBurmeseSearchMetadata, buildEmojiSearchLexicon } from '../../lib/burmese-search';
@@ -16,6 +17,8 @@ const CLDR_MY_DERIVED_URL = 'https://raw.githubusercontent.com/unicode-org/cldr/
 
 const EXTRA_KEYWORDS_CSV_PATH = path.join(process.cwd(), 'data/locales/my-extra-keywords.csv');
 const CONTRIBUTOR_CATALOG_CSV_PATH = path.join(process.cwd(), 'data/dist/emoji-contributor-catalog.csv');
+const BUILD_MANIFEST_PATH = path.join(process.cwd(), 'public/data/emoji/emoji-build-manifest.json');
+const FORCE_FULL_REBUILD = process.argv.includes('--full');
 
 interface EmojiEntry {
   emoji: string;
@@ -33,6 +36,32 @@ interface LocalizedEntry {
 
 interface ExtraKeywordsEntry {
   keywords: string[];
+}
+
+interface EmojiVectorEntry {
+  codePoints: string;
+  embedding: number[];
+}
+
+interface EmojiLexicalEntry {
+  codePoints: string;
+  contributorKeywords?: string[];
+  displayName: string;
+  emoji: string;
+  enName: string;
+  group: string;
+  keywords: string[];
+  myName: string;
+  searchTextMy: string;
+  subgroup: string;
+  wordTokens: string[];
+}
+
+interface BuildManifest {
+  generatedAt: string;
+  modelName: string;
+  unicodeVersion: string;
+  entries: Record<string, { embeddingInputHash: string }>;
 }
 
 function escapeCsvValue(value: string): string {
@@ -117,6 +146,49 @@ function parseExtraKeywordsCsv(filePath: string): Record<string, ExtraKeywordsEn
   }
 
   return data;
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function loadJsonIfExists<T>(filePath: string): T | null {
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+
+  return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as T;
+}
+
+function arraysEqual(left: string[] | undefined, right: string[] | undefined): boolean {
+  const normalizedLeft = left ?? [];
+  const normalizedRight = right ?? [];
+
+  if (normalizedLeft.length !== normalizedRight.length) {
+    return false;
+  }
+
+  return normalizedLeft.every((value, index) => value === normalizedRight[index]);
+}
+
+function canReuseExistingEmbedding(
+  currentEntry: EmojiLexicalEntry,
+  previousEntry: EmojiLexicalEntry | undefined
+): boolean {
+  if (!previousEntry) {
+    return false;
+  }
+
+  return (
+    currentEntry.codePoints === previousEntry.codePoints &&
+    currentEntry.enName === previousEntry.enName &&
+    currentEntry.myName === previousEntry.myName &&
+    currentEntry.group === previousEntry.group &&
+    currentEntry.subgroup === previousEntry.subgroup &&
+    currentEntry.searchTextMy === previousEntry.searchTextMy &&
+    arraysEqual(currentEntry.keywords, previousEntry.keywords) &&
+    arraysEqual(currentEntry.wordTokens, previousEntry.wordTokens)
+  );
 }
 
 function writeContributorCatalogCsv(emojis: EmojiEntry[]) {
@@ -227,9 +299,35 @@ async function main() {
     }
 
     const extraKeywordsMy = parseExtraKeywordsCsv(EXTRA_KEYWORDS_CSV_PATH);
-    
-    console.log(`Loading transformer pipeline... this may take a moment to drop the model locally.`);
-    const extractor = await pipeline('feature-extraction', MODEL_NAME);
+    const existingLexicalData = loadJsonIfExists<EmojiLexicalEntry[]>(
+      path.join(process.cwd(), 'public/data/emoji/emoji-index-my.json')
+    ) ?? [];
+    const existingVectorData = loadJsonIfExists<EmojiVectorEntry[]>(
+      path.join(process.cwd(), 'public/data/emoji/emoji-vectors-my.json')
+    ) ?? [];
+    const existingManifest = loadJsonIfExists<BuildManifest>(BUILD_MANIFEST_PATH);
+
+    const previousLexicalByCodePoints = new Map(
+      existingLexicalData.map((entry) => [entry.codePoints, entry])
+    );
+    const previousVectorsByCodePoints = new Map(
+      existingVectorData.map((entry) => [entry.codePoints, entry.embedding])
+    );
+    const previousManifestEntries =
+      existingManifest?.modelName === MODEL_NAME &&
+      existingManifest?.unicodeVersion === UNICODE_VERSION
+        ? existingManifest.entries
+        : undefined;
+
+    let extractorPromise: ReturnType<typeof pipeline> | null = null;
+    async function getExtractor() {
+      if (!extractorPromise) {
+        console.log(`Loading transformer pipeline... this may take a moment to drop the model locally.`);
+        extractorPromise = pipeline('feature-extraction', MODEL_NAME);
+      }
+
+      return extractorPromise;
+    }
 
     const qualifiedEmojis = baseEmojis.filter(base => base.status === 'fully-qualified');
     writeContributorCatalogCsv(qualifiedEmojis);
@@ -251,24 +349,18 @@ async function main() {
     const searchLexicon = buildEmojiSearchLexicon(localizedEmojis);
 
     console.log(`Generating Burmese index (${localizedEmojis.length} emojis)...`);
-    const myData = [];
+    const myData: EmojiLexicalEntry[] = [];
+    const vectorData: EmojiVectorEntry[] = [];
+    const manifestEntries: BuildManifest['entries'] = {};
     let count = 0;
-    
+    let reusedCount = 0;
+    let regeneratedCount = 0;
+
     for (const base of localizedEmojis) {
       if (++count % 500 === 0) console.log(`Processed ${count}/${localizedEmojis.length}...`);
 
       const metadata = buildBurmeseSearchMetadata(base.myName, base.myKeywords, searchLexicon);
-      const textToEmbed = buildPassageText(
-        base,
-        base.myName,
-        base.myKeywords,
-        metadata.searchTextMy,
-        metadata.wordTokens
-      );
-      const output = await extractor(textToEmbed, { pooling: 'mean', normalize: true });
-      const embedding = Array.from(output.data) as number[];
-
-      myData.push({
+      const lexicalEntry: EmojiLexicalEntry = {
         emoji: base.emoji,
         codePoints: base.codePoints,
         enName: base.name,
@@ -277,13 +369,62 @@ async function main() {
         keywords: base.myKeywords,
         group: base.group,
         subgroup: base.subgroup,
-        embedding,
         contributorKeywords: base.contributorKeywords,
         searchTextMy: metadata.searchTextMy,
         wordTokens: metadata.wordTokens,
+      };
+      const textToEmbed = buildPassageText(
+        base,
+        base.myName,
+        base.myKeywords,
+        metadata.searchTextMy,
+        metadata.wordTokens
+      );
+      const embeddingInputHash = sha256(textToEmbed);
+      const previousLexicalEntry = previousLexicalByCodePoints.get(base.codePoints);
+      const previousEmbedding = previousVectorsByCodePoints.get(base.codePoints);
+      const previousHash = previousManifestEntries?.[base.codePoints]?.embeddingInputHash;
+
+      let embedding: number[];
+      const canReuseFromManifest =
+        !FORCE_FULL_REBUILD &&
+        previousEmbedding &&
+        previousHash === embeddingInputHash;
+      const canReuseFromLexicalMatch =
+        !FORCE_FULL_REBUILD &&
+        previousEmbedding &&
+        !previousHash &&
+        canReuseExistingEmbedding(lexicalEntry, previousLexicalEntry);
+
+      if (canReuseFromManifest || canReuseFromLexicalMatch) {
+        embedding = previousEmbedding;
+        reusedCount++;
+      } else {
+        const extractor = await getExtractor();
+        const output = await extractor(textToEmbed, { pooling: 'mean', normalize: true });
+        embedding = Array.from(output.data) as number[];
+        regeneratedCount++;
+      }
+
+      manifestEntries[base.codePoints] = { embeddingInputHash };
+      myData.push(lexicalEntry);
+
+      vectorData.push({
+        codePoints: base.codePoints,
+        embedding,
       });
     }
     fs.writeFileSync(path.join(process.cwd(), 'public/data/emoji/emoji-index-my.json'), JSON.stringify(myData));
+    fs.writeFileSync(path.join(process.cwd(), 'public/data/emoji/emoji-vectors-my.json'), JSON.stringify(vectorData));
+    fs.writeFileSync(
+      BUILD_MANIFEST_PATH,
+      JSON.stringify({
+        generatedAt: new Date().toISOString(),
+        modelName: MODEL_NAME,
+        unicodeVersion: UNICODE_VERSION,
+        entries: manifestEntries,
+      } satisfies BuildManifest)
+    );
 
     const enData = qualifiedEmojis.map(base => ({
       emoji: base.emoji,
@@ -297,6 +438,13 @@ async function main() {
     fs.writeFileSync(path.join(process.cwd(), 'public/data/emoji/emoji-index-en.json'), JSON.stringify(enData));
 
     console.log(`Done! Indices rebuilt.`);
+    console.log(`Embeddings reused: ${reusedCount}`);
+    console.log(`Embeddings regenerated: ${regeneratedCount}`);
+    if (FORCE_FULL_REBUILD) {
+      console.log(`Mode: full rebuild`);
+    } else {
+      console.log(`Mode: incremental rebuild`);
+    }
     console.log(`Contributor catalog written to ${CONTRIBUTOR_CATALOG_CSV_PATH}`);
   } catch (error) {
     console.error('Error generating data:', error);

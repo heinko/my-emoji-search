@@ -14,7 +14,6 @@ export interface QueryAnalysis {
   requestedSkinTones: SkinToneId[];
   semanticViews: Array<{ text: string; weight: number }>;
   segmentedTerms: string[];
-  syllables: string[];
 }
 
 export interface QueryEmbedding {
@@ -84,7 +83,6 @@ export function analyzeSearchQuery(query: string, lexicon: OppaWordLexicon): Que
       requestedSkinTones,
       semanticViews: normalized ? [{ text: normalized, weight: 1 }] : [],
       segmentedTerms: [],
-      syllables: [],
     };
   }
 
@@ -96,7 +94,6 @@ export function analyzeSearchQuery(query: string, lexicon: OppaWordLexicon): Que
     requestedSkinTones,
     semanticViews: analysis.queryViews,
     segmentedTerms: analysis.segmentedTerms,
-    syllables: analysis.syllables,
   };
 }
 
@@ -186,40 +183,64 @@ function matchesContributorKeyword(emoji: EmojiItem, term: string): boolean {
   return compactContributorKeywords.some((keyword) => keyword === term || keyword.includes(term));
 }
 
+function shouldAllowBurmeseSubstringBoost(compactQuery: string): boolean {
+  // Very short Burmese fragments tend to match too many unrelated entries.
+  return compactQuery.length >= 4;
+}
+
 function scoreBurmeseLexical(emoji: EmojiItem, analysis: QueryAnalysis): number {
   const compactQuery = analysis.compactQuery;
   if (!compactQuery) return 0;
 
   let score = 0;
-  const compactFields = [
+  const rawFields = [
     emoji.myName,
     ...(emoji.keywords ?? []),
     emoji.searchTextMy,
-  ]
+  ].filter(Boolean);
+  const compactFields = rawFields
     .filter(Boolean)
     .map((field) => compactMyanmarText(field!));
 
-  if (compactFields.some((field) => field === compactQuery)) {
+  const phraseFieldMatch = rawFields.some((field) => field!.includes(compactQuery));
+  const shortContributorMatch = compactQuery.length < 4 && matchesContributorKeyword(emoji, compactQuery);
+
+  if (rawFields.some((field) => compactMyanmarText(field!) === compactQuery)) {
     score += 3.0;
-  } else if (compactFields.some((field) => field.includes(compactQuery))) {
+  } else if (
+    shouldAllowBurmeseSubstringBoost(compactQuery) &&
+    compactFields.some((field) => field.includes(compactQuery))
+  ) {
     score += 1.1;
+  } else if (shortContributorMatch) {
+    // Short Burmese fragments are noisy, so only let contributed keywords recover
+    // some of that recall instead of reopening broad substring matches globally.
+    score += 0.8;
+  }
+
+  if (phraseFieldMatch) {
+    score += 1.0;
   }
 
   if (matchesContributorKeyword(emoji, compactQuery)) {
-    score += 3.2;
+    score += 2.3;
   }
 
   const primaryHits = analysis.segmentedTerms.filter((term) => hasBurmeseTermSupport(emoji, term));
   if (analysis.segmentedTerms.length > 0) {
-    score += (primaryHits.length / analysis.segmentedTerms.length) * 1.8;
+    score += (primaryHits.length / analysis.segmentedTerms.length) * 2.0;
     if (primaryHits.length === analysis.segmentedTerms.length && analysis.segmentedTerms.length > 1) {
-      score += 0.4;
+      score += 0.5;
     }
+  }
+
+  if (phraseFieldMatch && analysis.segmentedTerms.length > 1 && primaryHits.length > 0) {
+    score += 0.6;
   }
 
   const contributedHits = analysis.segmentedTerms.filter((term) => matchesContributorKeyword(emoji, term));
   if (analysis.segmentedTerms.length > 0 && contributedHits.length > 0) {
-    score += (contributedHits.length / analysis.segmentedTerms.length) * 2.1;
+    score += (contributedHits.length / analysis.segmentedTerms.length) * 1.3;
   }
 
   const expandedTerms = analysis.semanticViews.length > 1
@@ -229,13 +250,7 @@ function scoreBurmeseLexical(emoji: EmojiItem, analysis: QueryAnalysis): number 
   const expandedHits = expandedOnly.filter((term) => hasBurmeseTermSupport(emoji, term));
 
   if (expandedOnly.length > 0) {
-    score += (expandedHits.length / expandedOnly.length) * 0.9;
-  }
-
-  if (score < 0.6 && analysis.syllables.length > 0) {
-    const emojiSyllables = emoji.syllables ?? [];
-    const matchedSyllables = analysis.syllables.filter((syllable) => emojiSyllables.includes(syllable));
-    score += (matchedSyllables.length / analysis.syllables.length) * 0.2;
+    score += (expandedHits.length / expandedOnly.length) * 0.45;
   }
 
   return score;
@@ -245,22 +260,6 @@ function semanticGate(lexicalScore: number, isBurmeseQuery: boolean): number {
   if (lexicalScore >= 1.6) return 1;
   if (lexicalScore >= 0.8) return 0.7;
   return isBurmeseQuery ? 0.25 : 0.45;
-}
-
-function scoreSkinTonePreference(emoji: EmojiItem, analysis: QueryAnalysis): number {
-  if (analysis.requestedSkinTones.length === 0 || !emoji.supportsSkinTonePicker) {
-    return 0;
-  }
-
-  if (emoji.skinTone && analysis.requestedSkinTones.includes(emoji.skinTone)) {
-    return 1.25;
-  }
-
-  if (emoji.skinTone === 'default') {
-    return -0.35;
-  }
-
-  return -0.6;
 }
 
 function collapseSkinToneResults(results: EmojiItem[], analysis: QueryAnalysis): EmojiItem[] {
@@ -316,7 +315,7 @@ export function rankEmojiResults(
         ? scoreBurmeseLexical(emoji, analysis)
         : scoreEnglishLexical(emoji, lowerQuery, analysis.englishTokens);
 
-      let score = lexicalScore + scoreSkinTonePreference(emoji, analysis);
+      let score = lexicalScore;
 
       if (semanticSignal && emoji.embedding && emoji.embedding.length > 0) {
         const similarity = semanticSignal.scores.get(emoji.emoji) ?? 0;
@@ -337,5 +336,5 @@ export function rankEmojiResults(
     .filter((emoji) => emoji.score > (analysis.isBurmeseQuery ? 0.35 : 0.25))
     .sort((a, b) => b.score! - a.score!);
 
-  return collapseSkinToneResults(ranked, analysis).slice(0, 32);
+  return collapseSkinToneResults(ranked, analysis).slice(0, 36);
 }
