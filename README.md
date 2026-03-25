@@ -10,7 +10,7 @@ Developed by **Heinko**.
 
 This project helps Myanmar-language users find emojis by exact meaning, Burmese word matches, and semantic intent without depending mainly on syllable overlap.
 
-For a deeper system walkthrough, see [search_architecture.md](/Users/heink/v0-burmese-emoji-search-su/search_architecture.md).
+For a deeper system walkthrough, see [search_architecture.md](./search_architecture.md).
 
 ## Features
 
@@ -87,13 +87,15 @@ By default, the app uses the deployed public Space URL baked into `/api/embed`. 
 
 ## Contributing Burmese Keywords
 
-If you want to improve Burmese search, add slang or hand-curated keywords to [data/locales/my-extra-keywords.csv](/Users/heink/v0-burmese-emoji-search-su/data/locales/my-extra-keywords.csv).
+If you want to improve Burmese search, add slang or hand-curated keywords to [data/locales/my-extra-keywords.csv](./data/locales/my-extra-keywords.csv).
 
 - `Hex`: the emoji code points from Unicode emoji data
 - `Emoji`: the emoji character, for readability
 - `Extra Keywords`: comma-separated Burmese or slang keywords to add on top of CLDR
 
 CLDR still supplies the emoji list, Burmese names, and base annotations. This file is only for carefully contributed extra search terms, and those terms receive a ranking boost.
+
+If contributors need a ready-made lookup list for `Hex` and `Emoji`, run `npm run update-emoji` and use `data/dist/emoji-contributor-catalog.csv`. It includes every fully-qualified emoji with just `Hex`, `Emoji`, `English Name`, and `Extra Keywords` so locale files can stay simple. Like the generated emoji JSON indexes, this catalog is not tracked in git.
 
 ## Tech Stack
 

@@ -37,3 +37,9 @@ space-service.log
 
 # generated emoji search indexes
 /public/data/emoji/*.json
+
+# generated contributor catalogs
+/data/dist/*.csv
+
+# generated contributor catalogs
+/public/data/dist/*.json

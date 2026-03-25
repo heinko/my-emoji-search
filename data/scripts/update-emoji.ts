@@ -15,6 +15,7 @@ const CLDR_MY_URL = 'https://raw.githubusercontent.com/unicode-org/cldr/main/com
 const CLDR_MY_DERIVED_URL = 'https://raw.githubusercontent.com/unicode-org/cldr/main/common/annotationsDerived/my.xml';
 
 const EXTRA_KEYWORDS_CSV_PATH = path.join(process.cwd(), 'data/locales/my-extra-keywords.csv');
+const CONTRIBUTOR_CATALOG_CSV_PATH = path.join(process.cwd(), 'data/dist/emoji-contributor-catalog.csv');
 
 interface EmojiEntry {
   emoji: string;
@@ -32,6 +33,14 @@ interface LocalizedEntry {
 
 interface ExtraKeywordsEntry {
   keywords: string[];
+}
+
+function escapeCsvValue(value: string): string {
+  if (/[",\r\n]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+
+  return value;
 }
 
 function buildPassageText(
@@ -104,6 +113,23 @@ function parseExtraKeywordsCsv(filePath: string): Record<string, ExtraKeywordsEn
   }
 
   return data;
+}
+
+function writeContributorCatalogCsv(emojis: EmojiEntry[]) {
+  const header = ['Hex', 'Emoji', 'English Name', 'Extra Keywords'];
+  const rows = emojis.map((emoji) =>
+    [
+      emoji.codePoints,
+      emoji.emoji,
+      emoji.name,
+      '',
+    ]
+      .map(escapeCsvValue)
+      .join(',')
+  );
+
+  fs.mkdirSync(path.dirname(CONTRIBUTOR_CATALOG_CSV_PATH), { recursive: true });
+  fs.writeFileSync(CONTRIBUTOR_CATALOG_CSV_PATH, [header.join(','), ...rows].join('\n'));
 }
 
 async function fetchText(url: string): Promise<string> {
@@ -202,6 +228,7 @@ async function main() {
     const extractor = await pipeline('feature-extraction', MODEL_NAME);
 
     const qualifiedEmojis = baseEmojis.filter(base => base.status === 'fully-qualified');
+    writeContributorCatalogCsv(qualifiedEmojis);
     const localizedEmojis = qualifiedEmojis.map((base) => {
       const myLocalized = burmeseAnnotations[base.emoji] || { name: '', keywords: [] };
       const contributed = extraKeywordsMy[base.codePoints]?.keywords || [];
@@ -266,6 +293,7 @@ async function main() {
     fs.writeFileSync(path.join(process.cwd(), 'public/data/emoji/emoji-index-en.json'), JSON.stringify(enData));
 
     console.log(`Done! Indices rebuilt.`);
+    console.log(`Contributor catalog written to ${CONTRIBUTOR_CATALOG_CSV_PATH}`);
   } catch (error) {
     console.error('Error generating data:', error);
     process.exit(1);
