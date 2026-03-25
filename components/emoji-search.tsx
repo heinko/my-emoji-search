@@ -1,10 +1,18 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
-import { Search, Copy, Check, Sparkles, Loader2, BrainCircuit, Info } from "lucide-react"
+import { memo, useDeferredValue, useMemo, useState, useEffect, useRef } from "react"
+import { Search, Check, Sparkles, Loader2, BrainCircuit, Info, Palette } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { loadEmojiData, type EmojiItem } from "@/lib/emoji-data"
+import {
+  SKIN_TONE_LABELS,
+  SKIN_TONE_ORDER,
+  supportsAppleStyleSkinTonePicker,
+  type SkinToneId,
+  type SkinToneOption,
+} from "@/lib/emoji-skin-tone"
 import { cn } from "@/lib/utils"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -17,8 +25,15 @@ export default function EmojiSearch() {
   const [copiedEmoji, setCopiedEmoji] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSemantic, setIsSemantic] = useState(false)
+  const [preferredSkinTones, setPreferredSkinTones] = useState<Record<string, SkinToneId>>({})
   const [showHint, setShowHint] = useState(true)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const latestSearchTermRef = useRef("")
+  const deferredSearchTerm = useDeferredValue(searchTerm)
+
+  useEffect(() => {
+    latestSearchTermRef.current = searchTerm
+  }, [searchTerm])
 
   // 1. Load emoji index
   useEffect(() => {
@@ -33,6 +48,7 @@ export default function EmojiSearch() {
 
   // 2. Transformer Semantic Search Hook
   const { results, search, isSearching, modelLoading } = useSemanticSearch(allEmojis, isSemantic)
+  const skinToneOptionsByBase = useMemo(() => buildSkinToneOptionsMap(allEmojis), [allEmojis])
 
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -42,21 +58,21 @@ export default function EmojiSearch() {
       clearTimeout(searchTimeoutRef.current)
     }
     searchTimeoutRef.current = setTimeout(() => {
-      search(searchTerm)
+      search(deferredSearchTerm)
     }, 800)
     
     return () => {
       if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
     }
-  }, [searchTerm, search])
+  }, [deferredSearchTerm, search])
 
   useEffect(() => {
-    if (!searchTerm.trim()) return
+    if (!latestSearchTermRef.current.trim()) return
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current)
     }
-    search(searchTerm)
-  }, [isSemantic, searchTerm, search])
+    search(latestSearchTermRef.current)
+  }, [isSemantic, search])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -106,7 +122,7 @@ export default function EmojiSearch() {
               ref={searchInputRef}
               type="text"
               disabled={isLoading}
-              placeholder="မြန်မာလို ရှာဖွေပါ... (ဥပမာ - ပျော်ရွှင်ခြင်း)"
+              placeholder="ဥပမာ - ပျော်ရွှင်"
               className={cn(
                 "pl-12 pr-4 py-6 text-lg rounded-2xl border-2 transition-all duration-300",
                 "bg-card shadow-lg focus:shadow-xl",
@@ -146,7 +162,7 @@ export default function EmojiSearch() {
               disabled={isLoading}
             />
             <Label htmlFor="semantic-mode" className="flex items-center gap-1.5 cursor-pointer">
-              Semantic Search (Transformers)
+              Semantic Search
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -205,15 +221,34 @@ export default function EmojiSearch() {
             </span>
           </div>
           
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-4 gap-3 md:gap-4">
             {results.map((emoji, idx) => (
+              (() => {
+                const baseCodePoints = emoji.baseCodePoints ?? emoji.codePoints
+                const skinToneOptions = skinToneOptionsByBase.get(baseCodePoints)
+                const selectedTone = preferredSkinTones[baseCodePoints]
+                const selectedOption = getSelectedSkinToneOption(emoji, skinToneOptions, selectedTone)
+
+                return (
               <EmojiCard
-                key={`${emoji.emoji}-${idx}`}
+                key={baseCodePoints}
                 emoji={emoji}
-                isCopied={copiedEmoji === emoji.emoji}
+                displayEmoji={selectedOption?.emoji ?? emoji.emoji}
+                displayName={selectedOption?.displayName ?? emoji.displayName}
+                isCopied={copiedEmoji === (selectedOption?.emoji ?? emoji.emoji)}
                 onCopy={(e, name) => copyToClipboard(e, name)}
+                onSelectSkinTone={(tone) => {
+                  setPreferredSkinTones((current) => ({
+                    ...current,
+                    [baseCodePoints]: tone,
+                  }))
+                }}
+                skinToneOptions={skinToneOptions}
+                selectedSkinTone={selectedOption?.tone ?? emoji.skinTone ?? "default"}
                 delay={Math.min(idx * 0.02, 0.5)}
               />
+                )
+              })()
             ))}
           </div>
         </div>
@@ -238,51 +273,154 @@ export default function EmojiSearch() {
   )
 }
 
-function EmojiCard({ emoji, isCopied, onCopy, delay }: { 
-  emoji: EmojiItem; 
-  isCopied: boolean; 
-  onCopy: (emoji: string, displayName: string) => void; 
-  delay: number 
+function buildSkinToneOptionsMap(allEmojis: EmojiItem[]): Map<string, SkinToneOption[]> {
+  const grouped = new Map<string, SkinToneOption[]>()
+
+  for (const emoji of allEmojis) {
+    if (!emoji.supportsSkinTonePicker || !emoji.baseCodePoints) continue
+
+    const options = grouped.get(emoji.baseCodePoints) ?? []
+    options.push({
+      emoji: emoji.emoji,
+      tone: emoji.skinTone ?? "default",
+      displayName: emoji.displayName,
+    })
+    grouped.set(emoji.baseCodePoints, options)
+  }
+
+  for (const [baseCodePoints, options] of grouped.entries()) {
+    const uniqueOptions = Array.from(
+      new Map(options.map((option) => [option.tone, option])).values()
+    ).sort(
+      (left, right) => SKIN_TONE_ORDER.indexOf(left.tone) - SKIN_TONE_ORDER.indexOf(right.tone)
+    )
+
+    if (supportsAppleStyleSkinTonePicker(uniqueOptions)) {
+      grouped.set(baseCodePoints, uniqueOptions)
+    } else {
+      grouped.delete(baseCodePoints)
+    }
+  }
+
+  return grouped
+}
+
+function getSelectedSkinToneOption(
+  emoji: EmojiItem,
+  skinToneOptions: SkinToneOption[] | undefined,
+  selectedTone: SkinToneId | undefined
+): SkinToneOption | undefined {
+  if (!skinToneOptions?.length) return undefined
+
+  return (
+    skinToneOptions.find((option) => option.tone === selectedTone) ??
+    skinToneOptions.find((option) => option.tone === emoji.skinTone) ??
+    skinToneOptions.find((option) => option.tone === "default") ??
+    skinToneOptions[0]
+  )
+}
+
+const EmojiCard = memo(function EmojiCard({
+  emoji,
+  displayEmoji,
+  displayName,
+  isCopied,
+  onCopy,
+  onSelectSkinTone,
+  skinToneOptions,
+  selectedSkinTone,
+  delay,
+}: {
+  emoji: EmojiItem;
+  displayEmoji: string;
+  displayName: string;
+  isCopied: boolean;
+  onCopy: (emoji: string, displayName: string) => void;
+  onSelectSkinTone: (tone: SkinToneId) => void;
+  skinToneOptions?: SkinToneOption[];
+  selectedSkinTone: SkinToneId;
+  delay: number
 }) {
   const [isHovered, setIsHovered] = useState(false)
 
   return (
-    <button
+    <div
       className={cn(
-        "group relative flex flex-col items-center justify-center p-2.5 rounded-2xl transition-all duration-200 min-h-[110px]",
-        "bg-secondary/50 hover:bg-primary hover:shadow-lg",
-        "active:scale-95 touch-manipulation",
-        isCopied && "bg-primary ring-2 ring-primary ring-offset-2",
+        "group relative rounded-2xl transition-all duration-200",
         "animate-pop-in"
       )}
       style={{ animationDelay: `${delay}s` }}
-      onClick={() => onCopy(emoji.emoji, emoji.displayName)}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <span className={cn(
-        "text-4xl md:text-5xl transition-transform duration-200",
-        isHovered && "scale-110",
-        isCopied && "animate-wiggle"
-      )}>
-        {emoji.emoji}
-      </span>
-      
-      <span className={cn(
-        "text-xs mt-2 line-clamp-2 text-center transition-colors font-medium px-0.5",
-        "text-muted-foreground group-hover:text-primary-foreground",
-        isCopied && "text-primary-foreground"
-      )}
-      style={{ lineHeight: '1.7em' }}
+      <button
+        className={cn(
+          "flex w-full flex-col items-center justify-center p-2.5 rounded-2xl transition-all duration-200 min-h-[110px]",
+          "bg-secondary/50 hover:bg-primary hover:shadow-lg",
+          "active:scale-95 touch-manipulation",
+          isCopied && "bg-primary ring-2 ring-primary ring-offset-2"
+        )}
+        onClick={() => onCopy(displayEmoji, displayName)}
       >
-        {emoji.displayName}
-      </span>
+        <span className={cn(
+          "text-4xl md:text-5xl transition-transform duration-200",
+          isHovered && "scale-110",
+          isCopied && "animate-wiggle"
+        )}>
+          {displayEmoji}
+        </span>
+        
+        <span className={cn(
+          "text-xs mt-2 line-clamp-2 text-center transition-colors font-medium px-0.5",
+          "text-muted-foreground group-hover:text-primary-foreground",
+          isCopied && "text-primary-foreground"
+        )}
+        style={{ lineHeight: '1.7em' }}
+        >
+          {displayName}
+        </span>
+      </button>
+
+      {skinToneOptions && skinToneOptions.length > 0 && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              className="absolute right-2 top-2 rounded-full bg-background/95 p-1.5 text-muted-foreground shadow-sm transition-colors hover:bg-background hover:text-foreground"
+              aria-label="Choose skin tone"
+            >
+              <Palette className="h-3.5 w-3.5" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-auto rounded-2xl p-2">
+            <div className="flex items-center gap-1.5">
+              {skinToneOptions.map((option) => (
+                <button
+                  key={`${emoji.baseCodePoints}-${option.tone}`}
+                  className={cn(
+                    "flex h-11 w-11 items-center justify-center rounded-xl border text-2xl transition-all hover:scale-105",
+                    selectedSkinTone === option.tone
+                      ? "border-primary bg-primary/10"
+                      : "border-border bg-background"
+                  )}
+                  onClick={() => {
+                    onSelectSkinTone(option.tone)
+                    onCopy(option.emoji, option.displayName)
+                  }}
+                  title={SKIN_TONE_LABELS[option.tone]}
+                >
+                  {option.emoji}
+                </button>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+      )}
 
       {isCopied && (
         <div className="absolute -top-1 -right-1 w-6 h-6 bg-accent text-accent-foreground rounded-full flex items-center justify-center shadow-sm animate-pop-in">
           <Check className="h-3.5 w-3.5" />
         </div>
       )}
-    </button>
+    </div>
   )
-}
+})

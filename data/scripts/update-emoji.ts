@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { parseStringPromise } from 'xml2js';
 import { pipeline, env } from '@huggingface/transformers';
+import { buildBurmeseSearchMetadata, buildEmojiSearchLexicon } from '../../lib/burmese-search';
 
 env.allowLocalModels = false;
 env.allowRemoteModels = true;
@@ -13,7 +14,8 @@ const EMOJI_TEST_URL = `https://unicode.org/Public/emoji/${UNICODE_VERSION}/emoj
 const CLDR_MY_URL = 'https://raw.githubusercontent.com/unicode-org/cldr/main/common/annotations/my.xml';
 const CLDR_MY_DERIVED_URL = 'https://raw.githubusercontent.com/unicode-org/cldr/main/common/annotationsDerived/my.xml';
 
-const CUSTOM_CSV_PATH = path.join(process.cwd(), 'data/locales/my.csv');
+const EXTRA_KEYWORDS_CSV_PATH = path.join(process.cwd(), 'data/locales/my-extra-keywords.csv');
+const CONTRIBUTOR_CATALOG_CSV_PATH = path.join(process.cwd(), 'data/dist/emoji-contributor-catalog.csv');
 
 interface EmojiEntry {
   emoji: string;
@@ -29,16 +31,32 @@ interface LocalizedEntry {
   keywords: string[];
 }
 
+interface ExtraKeywordsEntry {
+  keywords: string[];
+}
+
+function escapeCsvValue(value: string): string {
+  if (/[",\r\n]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+
+  return value;
+}
+
 function buildPassageText(
   emoji: EmojiEntry,
   myName: string,
-  myKeywords: string[]
+  myKeywords: string[],
+  searchTextMy: string,
+  wordTokens: string[]
 ): string {
   const keywordText = myKeywords.length > 0 ? myKeywords.join(', ') : emoji.name;
   return [
     'passage:',
     `emoji ${emoji.emoji}.`,
     `Burmese name ${myName}.`,
+    `Burmese search text ${searchTextMy}.`,
+    `Burmese tokens ${wordTokens.join(', ')}.`,
     `English name ${emoji.name}.`,
     `Keywords ${keywordText}.`,
     `Category ${emoji.group}.`,
@@ -70,38 +88,48 @@ function parseCsvLine(line: string): string[] {
   return result;
 }
 
-function parseLocaleCsv(filePath: string): Record<string, LocalizedEntry> {
+function parseExtraKeywordsCsv(filePath: string): Record<string, ExtraKeywordsEntry> {
   if (!fs.existsSync(filePath)) return {};
+
   const content = fs.readFileSync(filePath, 'utf-8');
   const lines = content.split(/\r?\n/);
-  const data: Record<string, LocalizedEntry> = {};
-  
-  const header = lines[0] || '';
-  const isNewFormat = header.toLowerCase().includes('english name');
+  const data: Record<string, ExtraKeywordsEntry> = {};
 
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
-    if (!line) continue;
-    
-    const cols = parseCsvLine(line);
-    if (cols.length < 4) continue;
-    
-    const hex = cols[0].trim();
-    let name = '';
-    let keywordsStr = '';
+    if (!line || line.startsWith('#')) continue;
 
-    if (isNewFormat && cols.length >= 5) {
-      name = cols[3].trim();
-      keywordsStr = cols[4].trim();
-    } else {
-      name = cols[2].trim();
-      keywordsStr = cols[3].trim();
-    }
-    
-    const keywords = keywordsStr.split(/[,;]/).map(k => k.trim()).filter(Boolean);
-    data[hex] = { name, keywords };
+    const cols = parseCsvLine(line);
+    if (cols.length < 3) continue;
+
+    const hex = cols[0].trim();
+    const keywords = cols[2]
+      .split(/[,;]/)
+      .map((keyword) => keyword.trim())
+      .filter(Boolean);
+
+    if (!hex || keywords.length === 0) continue;
+    data[hex] = { keywords };
   }
+
   return data;
+}
+
+function writeContributorCatalogCsv(emojis: EmojiEntry[]) {
+  const header = ['Hex', 'Emoji', 'English Name', 'Extra Keywords'];
+  const rows = emojis.map((emoji) =>
+    [
+      emoji.codePoints,
+      emoji.emoji,
+      emoji.name,
+      '',
+    ]
+      .map(escapeCsvValue)
+      .join(',')
+  );
+
+  fs.mkdirSync(path.dirname(CONTRIBUTOR_CATALOG_CSV_PATH), { recursive: true });
+  fs.writeFileSync(CONTRIBUTOR_CATALOG_CSV_PATH, [header.join(','), ...rows].join('\n'));
 }
 
 async function fetchText(url: string): Promise<string> {
@@ -194,26 +222,45 @@ async function main() {
       }
     }
 
-    const customMy = parseLocaleCsv(CUSTOM_CSV_PATH);
+    const extraKeywordsMy = parseExtraKeywordsCsv(EXTRA_KEYWORDS_CSV_PATH);
     
     console.log(`Loading transformer pipeline... this may take a moment to drop the model locally.`);
     const extractor = await pipeline('feature-extraction', MODEL_NAME);
 
     const qualifiedEmojis = baseEmojis.filter(base => base.status === 'fully-qualified');
+    writeContributorCatalogCsv(qualifiedEmojis);
+    const localizedEmojis = qualifiedEmojis.map((base) => {
+      const myLocalized = burmeseAnnotations[base.emoji] || { name: '', keywords: [] };
+      const contributed = extraKeywordsMy[base.codePoints]?.keywords || [];
+      const myName = myLocalized.name || base.name;
+      const myKeywords = Array.from(
+        new Set([...myLocalized.keywords, ...contributed])
+      );
 
-    console.log(`Generating Burmese index (${qualifiedEmojis.length} emojis)...`);
+      return {
+        ...base,
+        contributorKeywords: contributed,
+        myKeywords,
+        myName,
+      };
+    });
+    const searchLexicon = buildEmojiSearchLexicon(localizedEmojis);
+
+    console.log(`Generating Burmese index (${localizedEmojis.length} emojis)...`);
     const myData = [];
     let count = 0;
     
-    for (const base of qualifiedEmojis) {
-      if (++count % 500 === 0) console.log(`Processed ${count}/${qualifiedEmojis.length}...`);
+    for (const base of localizedEmojis) {
+      if (++count % 500 === 0) console.log(`Processed ${count}/${localizedEmojis.length}...`);
 
-      const myLocalized = burmeseAnnotations[base.emoji] || { name: '', keywords: [] };
-      const myCustom = customMy[base.codePoints] || {};
-      const myName = myCustom.name || myLocalized.name || base.name;
-      const myKeywords = Array.from(new Set([...myLocalized.keywords, ...(myCustom.keywords || [])]));
-
-      const textToEmbed = buildPassageText(base, myName, myKeywords);
+      const metadata = buildBurmeseSearchMetadata(base.myName, base.myKeywords, searchLexicon);
+      const textToEmbed = buildPassageText(
+        base,
+        base.myName,
+        base.myKeywords,
+        metadata.searchTextMy,
+        metadata.wordTokens
+      );
       const output = await extractor(textToEmbed, { pooling: 'mean', normalize: true });
       const embedding = Array.from(output.data) as number[];
 
@@ -221,12 +268,15 @@ async function main() {
         emoji: base.emoji,
         codePoints: base.codePoints,
         enName: base.name,
-        myName: myName,
-        displayName: myName,
-        keywords: myKeywords,
+        myName: base.myName,
+        displayName: base.myName,
+        keywords: base.myKeywords,
         group: base.group,
         subgroup: base.subgroup,
-        embedding
+        embedding,
+        contributorKeywords: base.contributorKeywords,
+        searchTextMy: metadata.searchTextMy,
+        wordTokens: metadata.wordTokens,
       });
     }
     fs.writeFileSync(path.join(process.cwd(), 'public/data/emoji/emoji-index-my.json'), JSON.stringify(myData));
@@ -243,6 +293,7 @@ async function main() {
     fs.writeFileSync(path.join(process.cwd(), 'public/data/emoji/emoji-index-en.json'), JSON.stringify(enData));
 
     console.log(`Done! Indices rebuilt.`);
+    console.log(`Contributor catalog written to ${CONTRIBUTOR_CATALOG_CSV_PATH}`);
   } catch (error) {
     console.error('Error generating data:', error);
     process.exit(1);
