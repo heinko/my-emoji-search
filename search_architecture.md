@@ -12,7 +12,7 @@ The system splits into two paths:
 ```mermaid
 flowchart LR
     subgraph Offline["Offline data build"]
-        U["Unicode 16 emoji list"]
+        U["Unicode 17 emoji list"]
         C["CLDR Myanmar annotations"]
         O["Local CSV overrides"]
         P["data/scripts/update-emoji.ts"]

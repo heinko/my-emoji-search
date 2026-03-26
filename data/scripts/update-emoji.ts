@@ -10,8 +10,8 @@ env.allowRemoteModels = true;
 
 const MODEL_NAME = 'intfloat/multilingual-e5-small';
 
-const UNICODE_VERSION = '16.0';
-const EMOJI_TEST_URL = `https://unicode.org/Public/emoji/${UNICODE_VERSION}/emoji-test.txt`;
+const UNICODE_VERSION = '17.0.0';
+const EMOJI_TEST_URL = `https://www.unicode.org/Public/${UNICODE_VERSION}/emoji/emoji-test.txt`;
 const CLDR_MY_URL = 'https://raw.githubusercontent.com/unicode-org/cldr/main/common/annotations/my.xml';
 const CLDR_MY_DERIVED_URL = 'https://raw.githubusercontent.com/unicode-org/cldr/main/common/annotationsDerived/my.xml';
 
