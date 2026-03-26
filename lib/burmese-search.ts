@@ -11,12 +11,10 @@ import {
 type BurmeseSearchSource = {
   keywords?: string[];
   myName?: string;
-  searchTextMy?: string;
   wordTokens?: string[];
 };
 
 export interface BurmeseSearchMetadata {
-  searchTextMy: string;
   wordTokens: string[];
 }
 
@@ -59,9 +57,6 @@ export function buildEmojiSearchLexicon(entries: BurmeseSearchSource[]): OppaWor
     if (entry.myName) {
       lexiconTerms.push(entry.myName);
     }
-    if (entry.searchTextMy) {
-      lexiconTerms.push(entry.searchTextMy);
-    }
     lexiconTerms.push(...(entry.keywords ?? []));
     lexiconTerms.push(...(entry.wordTokens ?? []));
   }
@@ -84,7 +79,6 @@ export function buildBurmeseSearchMetadata(
   const expandedTerms = uniqueOrdered(expandBurmeseConceptTerms([...rawTerms, ...segmentedTokens]));
 
   return {
-    searchTextMy: uniqueOrdered([myName, ...keywords, ...segmentedTokens, ...expandedTerms]).join(' ။ '),
     wordTokens: uniqueOrdered([...segmentedTokens, ...expandedTerms]),
   };
 }

@@ -43,6 +43,12 @@ interface EmojiVectorEntry {
   embedding: number[];
 }
 
+interface LocalizedEmojiEntry extends EmojiEntry {
+  contributorKeywords: string[];
+  myKeywords: string[];
+  myName: string;
+}
+
 interface EmojiLexicalEntry {
   codePoints: string;
   contributorKeywords?: string[];
@@ -52,7 +58,6 @@ interface EmojiLexicalEntry {
   group: string;
   keywords: string[];
   myName: string;
-  searchTextMy: string;
   subgroup: string;
   wordTokens: string[];
 }
@@ -76,7 +81,6 @@ function buildPassageText(
   emoji: EmojiEntry,
   myName: string,
   myKeywords: string[],
-  searchTextMy: string,
   wordTokens: string[]
 ): string {
   const keywordText = myKeywords.length > 0 ? myKeywords.join(', ') : emoji.name;
@@ -84,8 +88,7 @@ function buildPassageText(
     'passage:',
     `emoji ${emoji.emoji}.`,
     `Burmese name ${myName}.`,
-    `Burmese search text ${searchTextMy}.`,
-    `Burmese tokens ${wordTokens.join(', ')}.`,
+    `Burmese terms ${wordTokens.join(', ')}.`,
     `English name ${emoji.name}.`,
     `Keywords ${keywordText}.`,
     `Category ${emoji.group}.`,
@@ -185,7 +188,6 @@ function canReuseExistingEmbedding(
     currentEntry.myName === previousEntry.myName &&
     currentEntry.group === previousEntry.group &&
     currentEntry.subgroup === previousEntry.subgroup &&
-    currentEntry.searchTextMy === previousEntry.searchTextMy &&
     arraysEqual(currentEntry.keywords, previousEntry.keywords) &&
     arraysEqual(currentEntry.wordTokens, previousEntry.wordTokens)
   );
@@ -319,11 +321,19 @@ async function main() {
         ? existingManifest.entries
         : undefined;
 
-    let extractorPromise: ReturnType<typeof pipeline> | null = null;
+    const createExtractor = pipeline as unknown as (
+      task: 'feature-extraction',
+      model: string
+    ) => Promise<{
+      (text: string, options: { pooling: 'mean'; normalize: true }): Promise<{ data: Iterable<number> }>;
+    }>;
+    let extractorPromise: Promise<{
+      (text: string, options: { pooling: 'mean'; normalize: true }): Promise<{ data: Iterable<number> }>;
+    }> | null = null;
     async function getExtractor() {
       if (!extractorPromise) {
         console.log(`Loading transformer pipeline... this may take a moment to drop the model locally.`);
-        extractorPromise = pipeline('feature-extraction', MODEL_NAME);
+        extractorPromise = createExtractor('feature-extraction', MODEL_NAME);
       }
 
       return extractorPromise;
@@ -331,7 +341,7 @@ async function main() {
 
     const qualifiedEmojis = baseEmojis.filter(base => base.status === 'fully-qualified');
     writeContributorCatalogCsv(qualifiedEmojis);
-    const localizedEmojis = qualifiedEmojis.map((base) => {
+    const localizedEmojis: LocalizedEmojiEntry[] = qualifiedEmojis.map((base) => {
       const myLocalized = burmeseAnnotations[base.emoji] || { name: '', keywords: [] };
       const contributed = extraKeywordsMy[base.codePoints]?.keywords || [];
       const myName = myLocalized.name || base.name;
@@ -370,14 +380,12 @@ async function main() {
         group: base.group,
         subgroup: base.subgroup,
         contributorKeywords: base.contributorKeywords,
-        searchTextMy: metadata.searchTextMy,
         wordTokens: metadata.wordTokens,
       };
       const textToEmbed = buildPassageText(
         base,
         base.myName,
         base.myKeywords,
-        metadata.searchTextMy,
         metadata.wordTokens
       );
       const embeddingInputHash = sha256(textToEmbed);
@@ -401,8 +409,10 @@ async function main() {
         reusedCount++;
       } else {
         const extractor = await getExtractor();
-        const output = await extractor(textToEmbed, { pooling: 'mean', normalize: true });
-        embedding = Array.from(output.data) as number[];
+        const output = await extractor(textToEmbed, { pooling: 'mean', normalize: true }) as {
+          data: Iterable<number>;
+        };
+        embedding = Array.from(output.data);
         regeneratedCount++;
       }
 

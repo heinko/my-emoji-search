@@ -28,6 +28,33 @@ export interface SemanticSignal {
   scores: Map<string, number>;
 }
 
+interface CohortCandidate {
+  codePoints: string;
+  group: string;
+  subgroup: string;
+  lexicalScore: number;
+  semanticBoost: number;
+}
+
+interface CohortSignal {
+  group?: string;
+  subgroup?: string;
+  seedCodePoints: Set<string>;
+}
+
+interface RankingDebugEntry {
+  cohortBoost: number;
+  emoji: EmojiItem;
+  finalScore: number;
+  lexicalScore: number;
+  semanticBoost: number;
+  semanticSimilarity: number;
+}
+
+interface RankEmojiResultsOptions {
+  debug?: boolean;
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -162,7 +189,6 @@ function hasBurmeseTermSupport(emoji: EmojiItem, term: string): boolean {
 
   const compactFields = [
     emoji.myName,
-    emoji.searchTextMy,
     ...(emoji.keywords ?? []),
   ]
     .filter(Boolean)
@@ -196,7 +222,6 @@ function scoreBurmeseLexical(emoji: EmojiItem, analysis: QueryAnalysis): number 
   const rawFields = [
     emoji.myName,
     ...(emoji.keywords ?? []),
-    emoji.searchTextMy,
   ].filter(Boolean);
   const compactFields = rawFields
     .filter(Boolean)
@@ -262,6 +287,76 @@ function semanticGate(lexicalScore: number, isBurmeseQuery: boolean): number {
   return isBurmeseQuery ? 0.25 : 0.45;
 }
 
+function getDominantCohortKey(
+  candidates: CohortCandidate[],
+  key: 'group' | 'subgroup',
+  minimumSharedCount: number
+): string | undefined {
+  const aggregated = new Map<string, { count: number; score: number }>();
+
+  for (const candidate of candidates) {
+    const cohortKey = candidate[key];
+    if (!cohortKey) continue;
+
+    const current = aggregated.get(cohortKey) ?? { count: 0, score: 0 };
+    current.count += 1;
+    current.score += candidate.lexicalScore;
+    aggregated.set(cohortKey, current);
+  }
+
+  const ranked = Array.from(aggregated.entries())
+    .filter(([, value]) => value.count >= minimumSharedCount)
+    .sort((left, right) => right[1].score - left[1].score);
+
+  return ranked[0]?.[0];
+}
+
+function buildCohortSignal(candidates: CohortCandidate[]): CohortSignal | null {
+  const seedCandidates = candidates
+    .filter((candidate) => candidate.lexicalScore + candidate.semanticBoost > 10)
+    .sort(
+      (left, right) =>
+        right.lexicalScore + right.semanticBoost - (left.lexicalScore + left.semanticBoost)
+    );
+
+  if (seedCandidates.length < 2) {
+    return null;
+  }
+
+  const subgroup = getDominantCohortKey(seedCandidates, 'subgroup', 2);
+  const group = getDominantCohortKey(seedCandidates, 'group', 2);
+
+  if (!subgroup && !group) {
+    return null;
+  }
+
+  return {
+    group,
+    subgroup,
+    seedCodePoints: new Set(seedCandidates.map((candidate) => candidate.codePoints)),
+  };
+}
+
+function getCohortBoost(
+  emoji: EmojiItem,
+  lexicalScore: number,
+  cohortSignal: CohortSignal | null
+): number {
+  if (!cohortSignal || lexicalScore < 0.15 || cohortSignal.seedCodePoints.has(emoji.codePoints)) {
+    return 0;
+  }
+
+  if (cohortSignal.subgroup && emoji.subgroup === cohortSignal.subgroup) {
+    return 3;
+  }
+
+  if (cohortSignal.group && emoji.group === cohortSignal.group) {
+    return 1.5;
+  }
+
+  return 0;
+}
+
 function collapseSkinToneResults(results: EmojiItem[], analysis: QueryAnalysis): EmojiItem[] {
   if (analysis.requestedSkinTones.length > 0) {
     return results.filter((emoji) => {
@@ -302,39 +397,118 @@ function collapseSkinToneResults(results: EmojiItem[], analysis: QueryAnalysis):
   return collapsed;
 }
 
+function logRankingDebug(
+  query: string,
+  analysis: QueryAnalysis,
+  entries: RankingDebugEntry[],
+  cohortSignal: CohortSignal | null
+) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const debugEntries = entries.map((entry, index) => ({
+    rank: index + 1,
+    emoji: entry.emoji.emoji,
+    name: entry.emoji.enName,
+    group: entry.emoji.group,
+    subgroup: entry.emoji.subgroup,
+    lexical: Number(entry.lexicalScore.toFixed(3)),
+    cohort: Number(entry.cohortBoost.toFixed(3)),
+    semantic: Number(entry.semanticBoost.toFixed(3)),
+    similarity: Number(entry.semanticSimilarity.toFixed(3)),
+    final: Number(entry.finalScore.toFixed(3)),
+    wordTokens: (entry.emoji.wordTokens ?? []).join(' | '),
+  }));
+
+  console.groupCollapsed(
+    `[emoji-rank] "${query}" results=${debugEntries.length} subgroup=${cohortSignal?.subgroup ?? '-'} group=${cohortSignal?.group ?? '-'}`
+  );
+  console.log('analysis', {
+    compactQuery: analysis.compactQuery,
+    englishTokens: analysis.englishTokens,
+    isBurmeseQuery: analysis.isBurmeseQuery,
+    requestedSkinTones: analysis.requestedSkinTones,
+    segmentedTerms: analysis.segmentedTerms,
+    semanticViews: analysis.semanticViews,
+  });
+  console.table(debugEntries);
+  console.groupEnd();
+}
+
 export function rankEmojiResults(
   allEmojis: EmojiItem[],
   query: string,
   analysis: QueryAnalysis,
-  semanticSignal?: SemanticSignal
+  semanticSignal?: SemanticSignal,
+  options?: RankEmojiResultsOptions
 ): EmojiItem[] {
   const lowerQuery = query.toLowerCase().trim();
-  const ranked = allEmojis
-    .map((emoji) => {
-      const lexicalScore = analysis.isBurmeseQuery
-        ? scoreBurmeseLexical(emoji, analysis)
-        : scoreEnglishLexical(emoji, lowerQuery, analysis.englishTokens);
+  const lexicalCandidates = allEmojis.map((emoji) => {
+    const lexicalScore = analysis.isBurmeseQuery
+      ? scoreBurmeseLexical(emoji, analysis)
+      : scoreEnglishLexical(emoji, lowerQuery, analysis.englishTokens);
+    let semanticBoost = 0;
 
-      let score = lexicalScore;
+    if (semanticSignal && emoji.embedding && emoji.embedding.length > 0) {
+      const similarity = semanticSignal.scores.get(emoji.emoji) ?? 0;
+      const semanticRange = Math.max(semanticSignal.ceiling - semanticSignal.floor, 1e-6);
+
+      if (similarity > semanticSignal.floor) {
+        const normalized = Math.min(
+          1,
+          Math.max(0, (similarity - semanticSignal.floor) / semanticRange)
+        );
+
+        semanticBoost = normalized * 4 * semanticGate(lexicalScore, analysis.isBurmeseQuery);
+      }
+    }
+
+    return {
+      emoji,
+      lexicalScore,
+      semanticBoost,
+    };
+  });
+  const cohortSignal = buildCohortSignal(
+    lexicalCandidates.map(({ emoji, lexicalScore, semanticBoost }) => ({
+      codePoints: emoji.codePoints,
+      group: emoji.group,
+      subgroup: emoji.subgroup,
+      lexicalScore,
+      semanticBoost,
+    }))
+  );
+
+  const rankedEntries = lexicalCandidates
+    .map(({ emoji, lexicalScore, semanticBoost }) => {
+      const cohortBoost = getCohortBoost(emoji, lexicalScore, cohortSignal);
+      let score = lexicalScore + cohortBoost + semanticBoost;
+      let semanticSimilarity = 0;
 
       if (semanticSignal && emoji.embedding && emoji.embedding.length > 0) {
         const similarity = semanticSignal.scores.get(emoji.emoji) ?? 0;
-        const semanticRange = Math.max(semanticSignal.ceiling - semanticSignal.floor, 1e-6);
-
-        if (similarity > semanticSignal.floor) {
-          const normalized = Math.min(
-            1,
-            Math.max(0, (similarity - semanticSignal.floor) / semanticRange)
-          );
-
-          score += normalized * 3.1 * semanticGate(lexicalScore, analysis.isBurmeseQuery);
-        }
+        semanticSimilarity = similarity;
       }
 
-      return { ...emoji, score };
+      return {
+        cohortBoost,
+        emoji: { ...emoji, score },
+        finalScore: score,
+        lexicalScore,
+        semanticBoost,
+        semanticSimilarity,
+      };
     })
-    .filter((emoji) => emoji.score > (analysis.isBurmeseQuery ? 0.35 : 0.25))
-    .sort((a, b) => b.score! - a.score!);
+    .filter((entry) => entry.finalScore > (analysis.isBurmeseQuery ? 5 : 4))
+    .sort((a, b) => b.finalScore - a.finalScore);
 
-  return collapseSkinToneResults(ranked, analysis).slice(0, 36);
+  if (options?.debug) {
+    logRankingDebug(query, analysis, rankedEntries, cohortSignal);
+  }
+
+  return collapseSkinToneResults(
+    rankedEntries.map((entry) => entry.emoji),
+    analysis
+  ).slice(0, 48);
 }

@@ -16,7 +16,6 @@ export interface EmojiItem {
   embedding?: number[];
   enTokens?: string[];
   syllables?: string[];
-  searchTextMy?: string;
   baseCodePoints?: string;
   isSkinToneVariant?: boolean;
   skinTone?: SkinToneId;
@@ -55,7 +54,7 @@ export async function loadEmojiData(): Promise<EmojiItem[]> {
       await new Promise(resolve => setTimeout(resolve, 0));
 
       const needsSearchEnrichment = rawData.some(
-        (emoji) => !emoji.wordTokens?.length || !emoji.searchTextMy
+        (emoji) => !emoji.wordTokens?.length
       );
       const lexicon = needsSearchEnrichment ? buildEmojiSearchLexicon(rawData) : null;
       
@@ -66,14 +65,13 @@ export async function loadEmojiData(): Promise<EmojiItem[]> {
         emoji.isSkinToneVariant = skinToneMetadata.isSkinToneVariant;
         emoji.skinTone = skinToneMetadata.skinTone;
 
-        if (lexicon && (!emoji.wordTokens?.length || !emoji.searchTextMy)) {
+        if (lexicon && !emoji.wordTokens?.length) {
           const metadata = buildBurmeseSearchMetadata(
             emoji.myName ?? '',
             emoji.keywords ?? [],
             lexicon
           );
           emoji.wordTokens = metadata.wordTokens;
-          emoji.searchTextMy = metadata.searchTextMy;
         }
 
         emoji.enTokens = tokenizeEnglish(

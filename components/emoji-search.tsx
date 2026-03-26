@@ -141,7 +141,10 @@ export default function EmojiSearch() {
             />
             {searchTerm && (
               <button
-                onClick={() => setSearchTerm("")}
+                onClick={() => {
+                  setSearchTerm("")
+                  setIsSemantic(false)
+                }}
                 className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1 rounded-full hover:bg-muted"
               >
                 <span className="text-lg font-medium">{"×"}</span>
