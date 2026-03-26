@@ -1,43 +1,42 @@
 # Burmese Emoji Search Scoring
 
-This document explains the current ranking logic in detail, including the exact score sources and how semantic search interacts with lexical search.
+This document reflects the current ranking implementation in [lib/search-ranking.ts](/Users/heink/v0-burmese-emoji-search-su/lib/search-ranking.ts).
 
 ## Summary
 
-The search stack is hybrid:
+The current search stack is hybrid:
 
-- Lexical scoring is always computed in the browser
-- Semantic scoring is optional and only runs when semantic mode is enabled
-- Semantic similarity boosts lexical evidence instead of replacing it
-- Skin-tone variants are collapsed for presentation, but skin tone no longer changes the numeric score
-
-The main implementation lives in [lib/search-ranking.ts](/Users/heink/v0-burmese-emoji-search-su/lib/search-ranking.ts).
+- lexical scoring is always computed in the browser
+- semantic scoring is optional and only runs when semantic mode is enabled
+- cohort boosting is triggered from strong combined lexical + semantic candidates
+- skin-tone variants are collapsed for presentation
+- browser console debug logging is available for every search
 
 ## 1. Query Analysis
 
-The query is first normalized to lowercase and trimmed.
+The query is normalized to lowercase and trimmed first.
 
 ### English queries
 
-If the query does not contain Myanmar text:
+For non-Burmese queries:
 
 - `englishTokens` are extracted with a simple alphanumeric tokenizer
 - `semanticViews` contains the normalized query as one view
-- Burmese-specific segmentation is skipped
+- Burmese segmentation is skipped
 
 ### Burmese queries
 
-If the query contains Myanmar text:
+For Burmese queries:
 
-- `compactQuery` is built using the project’s Myanmar text compaction rules
-- `segmentedTerms` are generated with the oppaWord-inspired segmenter
-- `semanticViews` include the original Burmese query plus a segmented view when available
+- `compactQuery` is generated with the Myanmar text compaction rules
+- `segmentedTerms` come from the oppaWord-inspired segmenter
+- `semanticViews` include the original Burmese query plus the segmented view when available
 
-This keeps the lexical scorer focused on word-level evidence instead of syllable overlap.
+This keeps ranking focused on word-level evidence instead of syllable-only overlap.
 
 ## 2. English Lexical Scoring
 
-English scoring uses:
+English lexical scoring uses:
 
 - `enName`
 - `group`
@@ -46,41 +45,43 @@ English scoring uses:
 
 ### Score components
 
-- Exact full-field match: `+2.2`
-- Phrase match inside an English field: `+1.0`
-- Token overlap: up to `+0.9`
+- exact full-field match: `+2.2`
+- phrase match inside an English field: `+1.0`
+- token overlap: up to `+0.9`
 
-Token overlap is proportional:
+The token-overlap term is:
 
 - `matchedWords / queryTokens.length * 0.9`
 
 ## 3. Burmese Lexical Scoring
 
-Burmese scoring uses:
+Burmese lexical scoring uses:
 
 - `myName`
 - `keywords`
-- `searchTextMy`
 - `wordTokens`
 - `contributorKeywords`
 
+`searchTextMy` is no longer part of runtime ranking.
+
 ### Score components
 
-- Exact compact-field match: `+3.0`
-- Substring compact-field match: `+1.1`, but only for compact Burmese queries with length `>= 4`
-- Exact or substring contributor-keyword match: `+2.3`
-- Segmented term coverage: up to `+2.0`
-- Full segmented-term coverage bonus for multi-term queries: `+0.5`
-- Contributor-keyword segmented coverage: up to `+1.3`
-- Expanded segmented-term support: up to `+0.45`
+- exact compact-field match: `+3.0`
+- substring compact-field match: `+1.1` for compact Burmese queries with length `>= 4`
+- short-query contributor recovery: `+0.8`
+- phrase field match: `+1.0`
+- exact or substring contributor-keyword match: `+2.3`
+- segmented term coverage: up to `+2.0`
+- full segmented-term coverage bonus for multi-term queries: `+0.5`
+- phrase + segmented support bonus: `+0.6`
+- contributor-keyword segmented coverage: up to `+1.3`
+- expanded segmented-term support: up to `+0.45`
 
 ### Important behavior
 
-- The old `sylbreak` fallback is no longer part of ranking
-- Ranking now depends on oppaWord-style word evidence and curated keyword evidence only
-- Very short Burmese fragments do not receive the broad substring boost, which helps reduce noisy partial matches
-
-This change is intended to reduce noisy matches that were getting in through syllable overlap alone.
+- the old direct `sylbreak` fallback is no longer used for ranking
+- ranking depends on oppaWord-style term support plus curated keyword support
+- very short Burmese fragments do not get the broad substring boost
 
 ## 4. Semantic Scoring
 
@@ -88,8 +89,8 @@ Semantic scoring only runs when semantic mode is enabled.
 
 ### Inputs
 
-- Query embeddings from the HF Space via `/api/embed`
-- Precomputed emoji embeddings from `emoji-vectors-my.json`
+- query embeddings from `/api/embed`
+- precomputed emoji embeddings from `emoji-vectors-my.json`
 
 ### Similarity calculation
 
@@ -115,13 +116,13 @@ The normalized semantic signal is:
 
 clamped to `[0, 1]`
 
-The final semantic boost is:
+The current semantic boost is:
 
-- `normalized * 3.1 * semanticGate(...)`
+- `normalized * 4 * semanticGate(...)`
 
 ### Semantic gate
 
-The semantic gate depends on lexical strength:
+The semantic gate still depends on lexical strength:
 
 - lexical score `>= 1.6`: gate = `1`
 - lexical score `>= 0.8`: gate = `0.7`
@@ -129,44 +130,84 @@ The semantic gate depends on lexical strength:
   - Burmese query: gate = `0.25`
   - non-Burmese query: gate = `0.45`
 
-This is what keeps semantic search from overpowering obviously better lexical matches.
+## 5. Cohort Boosting
 
-## 5. Skin Tone Behavior
+After lexical and semantic contributions are estimated, the scorer looks for strong cohort seeds.
 
-Skin-tone variants still exist in the dataset, but skin tone no longer affects scoring.
+### Cohort seed rule
+
+A candidate becomes a cohort seed when:
+
+- `lexicalScore + semanticBoost > 10`
+
+Position does not matter. The scorer inspects all candidates that clear that combined threshold.
+
+### Cohort detection
+
+From those seed candidates:
+
+- if at least 2 share the same `subgroup`, that `subgroup` becomes dominant
+- if at least 2 share the same `group`, that `group` becomes dominant
+
+The seed list is sorted by combined `lexicalScore + semanticBoost`, but the dominant cohort itself is chosen by the summed lexical strength of agreeing seeds.
+
+### Cohort boosts
+
+Once a dominant cohort exists:
+
+- same `subgroup`: `+3`
+- same `group`: `+1.5`
+
+Guardrails:
+
+- seed emojis themselves do not get a cohort boost
+- a candidate still needs some lexical evidence of its own before cohort boosting applies
+- cohort boosting is only applied after a dominant `group` or `subgroup` is established
+
+## 6. Skin Tone Behavior
+
+Skin-tone variants are still present in the dataset, but skin tone does not add its own numeric score.
 
 Current behavior:
 
-- Skin-tone variants can still be filtered when the query explicitly asks for a tone
-- Results are collapsed so a skin-tone family does not flood the grid
-- The UI skin-tone picker remains the primary way for users to choose a preferred tone
+- explicit tone queries can still filter results
+- result lists are collapsed so a skin-tone family does not flood the grid
+- the default skin-tone variant is preferred when collapsing
 
-In other words:
-
-- skin tone affects presentation and explicit filtering
-- skin tone does not add a ranking bonus or penalty
-
-## 6. Final Ranking
+## 7. Final Ranking
 
 For each emoji:
 
-- start with lexical score
-- add semantic boost if semantic mode is enabled and the emoji clears the semantic floor
+- compute lexical score
+- compute semantic boost
+- infer dominant cohort from candidates whose `lexical + semantic > 10`
+- add cohort boost if the emoji matches that dominant `group` or `subgroup`
+- combine into the final score:
+  - `final = lexical + semantic + cohort`
 
 Then:
 
-- Burmese results must score above `0.35`
-- non-Burmese results must score above `0.25`
+- Burmese results must score above `5`
+- non-Burmese results must score above `4`
 - results are sorted descending by final score
 - skin-tone variants are collapsed unless the query explicitly requests tones
-- the final result list is truncated to the top 36
+- the final list is truncated to the top `48`
 
-## 7. Why This Version Exists
+## 8. Debug Logging
 
-This version of the scorer is designed to highlight:
+The browser logs ranking debug information for each search.
 
-- oppaWord-style Burmese segmentation
-- curated Burmese keyword quality
-- semantic search as a secondary booster
+Current debug output includes:
 
-It intentionally avoids weaker fallback behavior and reduces overly broad keyword dominance so the ranking stays more precise.
+- query analysis details
+- detected dominant `group` and `subgroup`
+- every ranked result, not just the top slice
+- per-result columns for:
+  - lexical score
+  - cohort boost
+  - semantic boost
+  - semantic similarity
+  - final score
+  - `wordTokens`
+
+This logging is emitted from [lib/search-ranking.ts](/Users/heink/v0-burmese-emoji-search-su/lib/search-ranking.ts) and enabled by [hooks/use-semantic-search.ts](/Users/heink/v0-burmese-emoji-search-su/hooks/use-semantic-search.ts).

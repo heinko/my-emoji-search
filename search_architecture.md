@@ -56,8 +56,8 @@ The build script in [data/scripts/update-emoji.ts](/Users/heink/v0-burmese-emoji
 2. Fetch Myanmar CLDR annotations and merge them with any derived annotations.
 3. Merge contributed extra Burmese keywords from `my-extra-keywords.csv` on top of CLDR annotations.
 4. Build an oppaWord-inspired Burmese lexicon from emoji names and keywords.
-5. Generate Burmese `wordTokens` plus a Burmese `searchTextMy` field for each emoji.
-6. Build a combined text string for each emoji using Burmese name, Burmese search text, English name, and keywords.
+5. Generate Burmese `wordTokens` for each emoji.
+6. Build a combined embedding text for each emoji using Burmese name, Burmese tokens, English name, keywords, group, and subgroup.
 7. Run that text through `intfloat/multilingual-e5-small` using Transformers.js with the `passage:` prefix expected by E5 models.
 8. Reuse any previous embedding whose hashed input text is unchanged, and only regenerate the rows whose embedding input changed.
 9. Save the lexical metadata to `emoji-index-my.json`, the vectors to `emoji-vectors-my.json`, and the reuse manifest to `emoji-build-manifest.json`.

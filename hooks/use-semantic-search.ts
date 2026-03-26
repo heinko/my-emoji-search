@@ -145,7 +145,9 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean) {
     }
 
     await yieldToBrowser();
-    const scored = rankEmojiResults(searchDataset, lowerQuery, queryAnalysis, semanticSignal);
+    const scored = rankEmojiResults(searchDataset, lowerQuery, queryAnalysis, semanticSignal, {
+      debug: typeof window !== 'undefined',
+    });
     resultCacheRef.current.set(cacheKey, scored);
     startTransition(() => {
       setResults(scored);

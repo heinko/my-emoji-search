@@ -52,8 +52,8 @@ function loadEmojiIndex(): EmojiItem[] {
 
   const enriched = rawData.map((emoji) => {
     const metadata =
-      emoji.wordTokens?.length && emoji.searchTextMy
-        ? { searchTextMy: emoji.searchTextMy, wordTokens: emoji.wordTokens }
+      emoji.wordTokens?.length
+        ? { wordTokens: emoji.wordTokens }
         : buildBurmeseSearchMetadata(emoji.myName ?? '', emoji.keywords ?? [], lexicon);
     const skinToneMetadata = getSkinToneMetadata(emoji.codePoints);
 
@@ -65,7 +65,6 @@ function loadEmojiIndex(): EmojiItem[] {
       ),
       embedding: embeddingMap.get(emoji.codePoints),
       isSkinToneVariant: skinToneMetadata.isSkinToneVariant,
-      searchTextMy: metadata.searchTextMy,
       skinTone: skinToneMetadata.skinTone,
       syllables: Array.from(
         new Set([

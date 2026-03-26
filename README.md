@@ -55,7 +55,7 @@ flowchart TD
 
 ## Runtime Components
 
-1. `public/data/emoji/emoji-index-my.json` stores the lexical runtime data: emoji metadata, Burmese `wordTokens`, Burmese `searchTextMy`, and contributed keywords.
+1. `public/data/emoji/emoji-index-my.json` stores the lexical runtime data: emoji metadata, Burmese `wordTokens`, and contributed keywords.
 2. `public/data/emoji/emoji-vectors-my.json` stores the precomputed 384-dimensional vectors and is fetched only when semantic mode is enabled.
 3. `hooks/use-semantic-search.ts` computes lexical scores from oppaWord-derived tokens and boosted contributed keywords, then asks `/api/embed` for multi-view query embeddings when semantic mode is enabled.
 4. `app/api/embed/route.ts` is a small proxy route that forwards embedding requests to the public Hugging Face Space.
@@ -88,7 +88,7 @@ That script will:
 1. Download Unicode emoji definitions
 2. Download CLDR Myanmar annotations
 3. Merge extra contributor keywords from `data/locales/my-extra-keywords.csv`
-4. Generate oppaWord-style Burmese tokens and Burmese search text
+4. Generate oppaWord-style Burmese tokens
 5. Reuse unchanged embeddings when possible, and only regenerate the rows whose embedding input changed
 6. Write the lexical JSON index plus a separate vector JSON file into `public/data/emoji/`
 

@@ -62,6 +62,14 @@ export default function Home() {
             <Link href="/credits" className="text-muted-foreground transition-colors hover:text-foreground">
               Credits
             </Link>
+            <a
+              href="https://github.com/heinko/my-emoji-search"
+              target="_blank"
+              rel="noreferrer"
+              className="text-muted-foreground transition-colors hover:text-foreground"
+            >
+              GitHub
+            </a>
           </div>
         </div>
       </footer>
