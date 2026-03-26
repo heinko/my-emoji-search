@@ -2,7 +2,8 @@ import Link from "next/link"
 
 export const metadata = {
   title: "About | Burmese Emoji Search",
-  description: "About Burmese Emoji Search, a Burmese and English emoji finder built for faster emoji search.",
+  description:
+    "Learn how Burmese Emoji Search works, how the emoji data was built, and why heinko made it.",
 }
 
 export default function AboutPage() {
@@ -32,58 +33,82 @@ export default function AboutPage() {
 
           <div className="space-y-5">
             <h1 className="text-3xl font-semibold tracking-tight md:text-5xl">
-              Burmese and English emoji search made simple
+              How this emoji search works
             </h1>
 
             <p className="text-base leading-8 text-muted-foreground md:text-lg">
-              Burmese Emoji Search helps people find emojis with Burmese and English keywords,
-              phrases, and everyday expressions.
+              Burmese Emoji Search is a small search tool for finding emojis with Burmese or English
+              words, short phrases, and everyday ideas.
             </p>
 
             <p className="text-base leading-8 text-muted-foreground md:text-lg">
-              The goal is to make emoji search faster and more natural, without needing to guess the
-              exact English emoji name.
+              The main idea is simple: people should not need to know the exact official English
+              emoji name just to find the right icon. You can search more naturally and let the app
+              do the matching work.
+            </p>
+
+            <p className="text-base leading-8 text-muted-foreground md:text-lg">
+              This is also a fun personal project by me, heinko, built to explore Burmese-localized
+              search in a playful and useful way.
+            </p>
+
+            <p className="text-base leading-8 text-muted-foreground md:text-lg">
+              It was very much vibe coded too, with Codex helping me turn the idea into a working
+              little product and v0 helping shape the UI.
             </p>
           </div>
         </section>
 
         <section className="grid gap-5 md:grid-cols-3">
           <article className="rounded-[1.75rem] border border-border bg-card/70 p-6">
-            <h2 className="mb-3 text-lg font-semibold">Made for everyday use</h2>
+            <h2 className="mb-3 text-lg font-semibold">Default search</h2>
             <p className="text-sm leading-7 text-muted-foreground">
-              Built for chat, social posts, comments, and reactions with a fast, simple search
-              experience.
+              By default, the app ranks emojis with a lexical search that compares your query with
+              emoji names, Burmese keywords, English tokens, categories, and segmented Burmese terms.
             </p>
           </article>
 
           <article className="rounded-[1.75rem] border border-border bg-card/70 p-6">
-            <h2 className="mb-3 text-lg font-semibold">Built with Burmese in mind</h2>
+            <h2 className="mb-3 text-lg font-semibold">Semantic mode</h2>
             <p className="text-sm leading-7 text-muted-foreground">
-              Includes Burmese words, phrases, and curated search terms to better match real usage.
+              There is also an optional semantic mode that uses multilingual embeddings to match by
+              meaning, which helps when Burmese and English ideas do not line up as exact keywords.
             </p>
           </article>
 
           <article className="rounded-[1.75rem] border border-border bg-card/70 p-6">
-            <h2 className="mb-3 text-lg font-semibold">A portfolio project</h2>
+            <h2 className="mb-3 text-lg font-semibold">Result cleanup</h2>
             <p className="text-sm leading-7 text-muted-foreground">
-              Also showcases how localized Burmese search can feel practical, useful, and easy to use.
+              The search also groups skin-tone variants and keeps the result list focused, so you get
+              a cleaner set of useful matches instead of a wall of near-duplicates.
             </p>
           </article>
         </section>
 
         <section className="rounded-[2rem] border border-border bg-gradient-to-br from-card via-card to-secondary/40 p-6 shadow-lg md:p-10">
-          <h2 className="mb-4 text-2xl font-semibold">What visitors should know</h2>
+          <h2 className="mb-4 text-2xl font-semibold">How the data was built</h2>
           <div className="space-y-4 text-base leading-8 text-muted-foreground">
             <p>
-              Type a word, feeling, or idea in Burmese or English to quickly browse matching emojis.
+              The emoji list starts from the official Unicode emoji data, then adds Burmese names and
+              keyword annotations from CLDR Myanmar locale files.
             </p>
             <p>
-              Some results are direct and some reflect everyday Burmese expressions. That mix is
-              intentional and helps search feel more natural.
+              On top of that, I added extra curated Burmese keywords so the search can better reflect
+              how people actually describe feelings, objects, and situations in daily use.
             </p>
             <p>
-              For the tools, datasets, and language resources behind the project, visit the Credits
-              page.
+              During the build step, the project generates a Burmese search index, splits and
+              normalizes Burmese terms for matching, and also prepares semantic vectors for optional
+              meaning-based search.
+            </p>
+            <p>
+              So the overview is: official emoji source data, localized Burmese labels, extra
+              hand-curated keywords, then a search index tuned to make Burmese and English emoji
+              lookup feel easier.
+            </p>
+            <p>
+              For the underlying tools, models, and data sources behind this project, visit the
+              Credits page.
             </p>
           </div>
         </section>

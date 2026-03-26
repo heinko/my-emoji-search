@@ -12,21 +12,9 @@ export const metadata: Metadata = {
   description: 'Search for emojis using Burmese text. Find the perfect emoji for your messages with our easy-to-use search tool.',
   generator: 'v0.app',
   icons: {
-    icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
-    ],
-    apple: '/apple-icon.png',
+    icon: '/sparkle-icon.svg',
+    shortcut: '/sparkle-icon.svg',
+    apple: '/sparkle-icon.svg',
   },
 }
 

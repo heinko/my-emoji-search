@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { ArrowUpRight } from "lucide-react"
 
 const creditSections = [
   {
@@ -6,7 +7,15 @@ const creditSections = [
     items: [
       {
         name: "Heinko",
-        note: "Creator and maintainer of Burmese Emoji Search.",
+        note: "Creator and maintainer of Burmese Emoji Search. This project was also vibe coded with help from Codex and v0.",
+      },
+      {
+        name: "Codex",
+        note: "Used as the coding assistant during the vibe coding process for building and polishing the project.",
+      },
+      {
+        name: "v0",
+        note: "Used to help shape and iterate on the UI during the vibe coding process.",
       },
     ],
   },
@@ -100,6 +109,10 @@ export default function CreditsPage() {
               This project is built with public language resources, Unicode emoji data, open-source
               tools, and hosting services. This page gives clear credit to those sources.
             </p>
+            <p className="text-base leading-8 text-muted-foreground md:text-lg">
+              It was also vibe coded with Codex for coding help and v0 for the UI side of the
+              process.
+            </p>
           </div>
         </section>
 
@@ -119,9 +132,10 @@ export default function CreditsPage() {
                           href={item.href}
                           target="_blank"
                           rel="noreferrer"
-                          className="transition-colors hover:text-primary"
+                          className="inline-flex items-center gap-1.5 transition-colors hover:text-primary"
                         >
                           {item.name}
+                          <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                         </a>
                       ) : (
                         item.name
