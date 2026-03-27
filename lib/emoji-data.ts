@@ -6,6 +6,7 @@ export interface EmojiItem {
   emoji: string;
   codePoints: string;
   contributorKeywords?: string[];
+  englishKeywords?: string[];
   name: string;
   enName: string;
   myName: string;
@@ -28,8 +29,55 @@ export interface EmojiVectorEntry {
   embedding: number[];
 }
 
+function normalizeEnglishSearchText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\b(?:[a-z]\.){2,}[a-z]?\.?/g, (match) => match.replace(/\./g, ''))
+    .replace(/&/g, ' and ')
+    .replace(/[_-]+/g, ' ');
+}
+
+function stemEnglishToken(token: string): string {
+  if (token.length <= 3) return token;
+
+  if (token.endsWith('ied') && token.length > 4) {
+    return `${token.slice(0, -3)}y`;
+  }
+
+  if (token.endsWith('ies') && token.length > 4) {
+    return `${token.slice(0, -3)}y`;
+  }
+
+  if (token.endsWith('ing') && token.length > 5) {
+    const stem = token.slice(0, -3);
+    return /(.)\1$/.test(stem) ? stem.slice(0, -1) : stem;
+  }
+
+  if (token.endsWith('ed') && token.length > 4) {
+    const stem = token.slice(0, -2);
+    return /(.)\1$/.test(stem) ? stem.slice(0, -1) : stem;
+  }
+
+  if (token.endsWith('es') && token.length > 4) {
+    return token.slice(0, -2);
+  }
+
+  if (token.endsWith('s') && token.length > 3) {
+    return token.slice(0, -1);
+  }
+
+  return token;
+}
+
 function tokenizeEnglish(text: string): string[] {
-  return (text.toLowerCase().match(/[a-z0-9]+(?:'[a-z0-9]+)?/g) ?? []).filter(Boolean);
+  const normalized = normalizeEnglishSearchText(text);
+  const baseTokens = normalized.match(/[a-z0-9]+(?:'[a-z0-9]+)?/g) ?? [];
+  const expandedTokens = baseTokens.flatMap((token) => {
+    const stemmed = stemEnglishToken(token);
+    return stemmed === token ? [token] : [token, stemmed];
+  });
+
+  return Array.from(new Set(expandedTokens)).filter(Boolean);
 }
 
 // Cache the lexical dataset in memory so we don't re-parse it repeatedly.
@@ -75,7 +123,9 @@ export async function loadEmojiData(): Promise<EmojiItem[]> {
         }
 
         emoji.enTokens = tokenizeEnglish(
-          [emoji.enName, emoji.group, emoji.subgroup].filter(Boolean).join(' ')
+          [emoji.enName, ...(emoji.englishKeywords ?? []), emoji.group, emoji.subgroup]
+            .filter(Boolean)
+            .join(' ')
         );
 
         if (emoji.myName) {

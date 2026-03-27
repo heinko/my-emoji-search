@@ -21,5 +21,8 @@
   { "query": "sea", "expectedTop10": [], "minimumHits": 0, "mustExcludeTop10": ["🤢", "💺"] },
   { "query": "ship", "expectedTop10": ["🚢", "⛵"], "minimumHits": 1 },
   { "query": "airplane", "expectedTop10": ["✈️", "🛫", "🛬"], "minimumHits": 1 },
-  { "query": "heart", "expectedTop10": ["❤️", "💗", "💓"], "minimumHits": 1 }
+  { "query": "heart", "expectedTop10": ["❤️", "💗", "💓"], "minimumHits": 1 },
+  { "query": "happy", "expectedTop10": ["😀", "🙂", "😄"], "minimumHits": 1 },
+  { "query": "laugh", "expectedTop10": ["🤣", "😂", "😆"], "minimumHits": 1 },
+  { "query": "doctor", "expectedTop10": ["🩺", "🏥", "💉", "🥼"], "minimumHits": 1 }
 ]
