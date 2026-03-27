@@ -1,9 +1,9 @@
 import Link from "next/link"
 
 export const metadata = {
-  title: "About | Burmese Emoji Search",
+  title: "About | Myanmar Emoji Search",
   description:
-    "Learn how Burmese Emoji Search works, how the emoji data was built, and why heinko made it.",
+    "Learn how Myanmar Emoji Search works, how the locale-aware emoji data was built, and why heinko made it.",
 }
 
 export default function AboutPage() {
@@ -37,8 +37,8 @@ export default function AboutPage() {
             </h1>
 
             <p className="text-base leading-8 text-muted-foreground md:text-lg">
-              Burmese Emoji Search is a small search tool for finding emojis with Burmese or English
-              words, short phrases, and everyday ideas.
+              Myanmar Emoji Search is a small search tool for finding emojis with Burmese, supported
+              Myanmar-region languages, or English words, short phrases, and everyday ideas.
             </p>
 
             <p className="text-base leading-8 text-muted-foreground md:text-lg">
@@ -64,7 +64,8 @@ export default function AboutPage() {
             <h2 className="mb-3 text-lg font-semibold">Default search</h2>
             <p className="text-sm leading-7 text-muted-foreground">
               By default, the app ranks emojis with a lexical search that compares your query with
-              emoji names, Burmese keywords, English tokens, categories, and segmented Burmese terms.
+              locale-specific emoji names, locale keywords, English tokens, categories, and segmented
+              Burmese terms when Burmese is selected.
             </p>
           </article>
 
@@ -89,22 +90,21 @@ export default function AboutPage() {
           <h2 className="mb-4 text-2xl font-semibold">How the data was built</h2>
           <div className="space-y-4 text-base leading-8 text-muted-foreground">
             <p>
-              The emoji list starts from the official Unicode emoji data, then adds Burmese names and
-              keyword annotations from CLDR Myanmar locale files.
+              The emoji list starts from the official Unicode emoji data, then adds locale-specific
+              names and keyword annotations from CLDR locale files for each supported language.
             </p>
             <p>
-              On top of that, I added extra curated Burmese keywords so the search can better reflect
-              how people actually describe feelings, objects, and situations in daily use.
+              On top of that, I added extra curated keywords for supported locales so the search can
+              better reflect how people actually describe feelings, objects, and situations in daily use.
             </p>
             <p>
-              During the build step, the project generates a Burmese search index, splits and
-              normalizes Burmese terms for matching, and also prepares semantic vectors for optional
-              meaning-based search.
+              During the build step, the project generates one search index per supported locale,
+              keeps English keywords available across locales, and prepares semantic vectors for the
+              locales that currently support meaning-based search.
             </p>
             <p>
-              So the overview is: official emoji source data, localized Burmese labels, extra
-              hand-curated keywords, then a search index tuned to make Burmese and English emoji
-              lookup feel easier.
+              So the overview is: official emoji source data, localized labels, extra hand-curated
+              keywords, then a locale-aware search index tuned to make emoji lookup feel easier.
             </p>
             <p>
               For the underlying tools, models, and data sources behind this project, visit the

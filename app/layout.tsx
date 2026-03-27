@@ -8,9 +8,8 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'Burmese Emoji Search - Find Perfect Emojis',
-  description: 'Search for emojis using Burmese text. Find the perfect emoji for your messages with our easy-to-use search tool.',
-  generator: 'v0.app',
+  title: 'Myanmar Emoji Search - Find Perfect Emojis',
+  description: 'Search for emojis using Burmese and supported Myanmar-region languages, with English keywords always available as a fallback.',
   icons: {
     icon: '/sparkle-icon.svg',
     shortcut: '/sparkle-icon.svg',

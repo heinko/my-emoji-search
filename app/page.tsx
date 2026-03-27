@@ -33,11 +33,11 @@ export default function Home() {
         <div className="max-w-2xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 bg-card/80 backdrop-blur-sm px-4 py-2 rounded-full border border-border mb-6 animate-slide-up">
             <span className="text-lg">{"🇲🇲"}</span>
-            <span className="text-sm font-medium text-muted-foreground">Emoji Search</span>
+            <span className="text-sm font-medium text-muted-foreground">Myanmar Emoji Search</span>
           </div>
 
           <p className="text-md md:text-md text-muted-foreground max-w-md mx-auto animate-slide-up" style={{ animationDelay: "0.2s" , lineHeight: "1.7" }}>
-            အီမိုဂျီတွေကို မြန်မာလို ရှာမယ်...
+            အီမိုဂျီတွေကို ကိုယ့်ဘာသာစကားနဲ့ ရှာမယ်...
           </p>
         </div>
       </header>

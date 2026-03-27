@@ -9,8 +9,8 @@ import {
 } from './oppa-word';
 
 type BurmeseSearchSource = {
-  keywords?: string[];
-  myName?: string;
+  localizedKeywords?: string[];
+  localizedName?: string;
   wordTokens?: string[];
 };
 
@@ -54,10 +54,10 @@ export function buildEmojiSearchLexicon(entries: BurmeseSearchSource[]): OppaWor
   const lexiconTerms: string[] = [];
 
   for (const entry of entries) {
-    if (entry.myName) {
-      lexiconTerms.push(entry.myName);
+    if (entry.localizedName) {
+      lexiconTerms.push(entry.localizedName);
     }
-    lexiconTerms.push(...(entry.keywords ?? []));
+    lexiconTerms.push(...(entry.localizedKeywords ?? []));
     lexiconTerms.push(...(entry.wordTokens ?? []));
   }
 

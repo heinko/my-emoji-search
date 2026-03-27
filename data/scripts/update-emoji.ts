@@ -4,6 +4,7 @@ import { createHash } from 'crypto';
 import { parseStringPromise } from 'xml2js';
 import { pipeline, env } from '@huggingface/transformers';
 import { buildBurmeseSearchMetadata, buildEmojiSearchLexicon } from '../../lib/burmese-search';
+import { SUPPORTED_LOCALES, type LocaleConfig } from '../../lib/locale-config';
 
 env.allowLocalModels = false;
 env.allowRemoteModels = true;
@@ -12,12 +13,7 @@ const MODEL_NAME = 'intfloat/multilingual-e5-small';
 
 const UNICODE_VERSION = '17.0.0';
 const EMOJI_TEST_URL = `https://www.unicode.org/Public/${UNICODE_VERSION}/emoji/emoji-test.txt`;
-const CLDR_EN_URL = 'https://raw.githubusercontent.com/unicode-org/cldr/main/common/annotations/en.xml';
-const CLDR_EN_DERIVED_URL = 'https://raw.githubusercontent.com/unicode-org/cldr/main/common/annotationsDerived/en.xml';
-const CLDR_MY_URL = 'https://raw.githubusercontent.com/unicode-org/cldr/main/common/annotations/my.xml';
-const CLDR_MY_DERIVED_URL = 'https://raw.githubusercontent.com/unicode-org/cldr/main/common/annotationsDerived/my.xml';
-
-const EXTRA_KEYWORDS_CSV_PATH = path.join(process.cwd(), 'data/locales/my-extra-keywords.csv');
+const CLDR_BASE_URL = 'https://raw.githubusercontent.com/unicode-org/cldr/main/common';
 const CONTRIBUTOR_CATALOG_CSV_PATH = path.join(process.cwd(), 'data/dist/emoji-contributor-catalog.csv');
 const BUILD_MANIFEST_PATH = path.join(process.cwd(), 'public/data/emoji/emoji-build-manifest.json');
 const FORCE_FULL_REBUILD = process.argv.includes('--full');
@@ -48,8 +44,8 @@ interface EmojiVectorEntry {
 interface LocalizedEmojiEntry extends EmojiEntry {
   contributorKeywords: string[];
   englishKeywords: string[];
-  myKeywords: string[];
-  myName: string;
+  localizedKeywords: string[];
+  localizedName: string;
 }
 
 interface EmojiLexicalEntry {
@@ -60,8 +56,8 @@ interface EmojiLexicalEntry {
   enName: string;
   englishKeywords?: string[];
   group: string;
-  keywords: string[];
-  myName: string;
+  localizedKeywords: string[];
+  localizedName: string;
   subgroup: string;
   wordTokens: string[];
 }
@@ -81,29 +77,11 @@ function escapeCsvValue(value: string): string {
   return value;
 }
 
-function buildPassageText(
-  emoji: EmojiEntry,
-  myName: string,
-  myKeywords: string[],
-  wordTokens: string[]
-): string {
-  const keywordText = myKeywords.length > 0 ? myKeywords.join(', ') : emoji.name;
-  return [
-    'passage:',
-    `emoji ${emoji.emoji}.`,
-    `Burmese name ${myName}.`,
-    `Burmese terms ${wordTokens.join(', ')}.`,
-    `English name ${emoji.name}.`,
-    `Keywords ${keywordText}.`,
-    `Category ${emoji.group}.`,
-    `Subcategory ${emoji.subgroup}.`,
-  ].join(' ');
-}
-
 function parseCsvLine(line: string): string[] {
   const result: string[] = [];
   let current = '';
   let inQuotes = false;
+
   for (let i = 0; i < line.length; i++) {
     const char = line[i];
     if (char === '"') {
@@ -120,6 +98,7 @@ function parseCsvLine(line: string): string[] {
       current += char;
     }
   }
+
   result.push(current);
   return result;
 }
@@ -139,9 +118,6 @@ function parseExtraKeywordsCsv(filePath: string): Record<string, ExtraKeywordsEn
     if (cols.length < 3) continue;
 
     const hex = cols[0].trim();
-    // Support both the current 4-column catalog format
-    // (Hex, Emoji, English Name, Extra Keywords)
-    // and older 3-column variants where keywords were the last column.
     const keywordColumn = cols.length >= 4 ? cols[3] : cols[2];
     const keywords = keywordColumn
       .split(/[,;]/)
@@ -189,25 +165,43 @@ function canReuseExistingEmbedding(
   return (
     currentEntry.codePoints === previousEntry.codePoints &&
     currentEntry.enName === previousEntry.enName &&
-    currentEntry.myName === previousEntry.myName &&
+    currentEntry.localizedName === previousEntry.localizedName &&
     currentEntry.group === previousEntry.group &&
     currentEntry.subgroup === previousEntry.subgroup &&
-    arraysEqual(currentEntry.keywords, previousEntry.keywords) &&
+    arraysEqual(currentEntry.localizedKeywords, previousEntry.localizedKeywords) &&
+    arraysEqual(currentEntry.englishKeywords, previousEntry.englishKeywords) &&
     arraysEqual(currentEntry.wordTokens, previousEntry.wordTokens)
   );
+}
+
+function buildPassageText(
+  locale: LocaleConfig,
+  emoji: EmojiEntry,
+  localizedName: string,
+  localizedKeywords: string[],
+  englishKeywords: string[],
+  wordTokens: string[]
+): string {
+  const localizedKeywordText = localizedKeywords.length > 0 ? localizedKeywords.join(', ') : localizedName;
+  const localizedTokenText = wordTokens.length > 0 ? wordTokens.join(', ') : localizedKeywordText;
+  const englishKeywordText = englishKeywords.length > 0 ? englishKeywords.join(', ') : emoji.name;
+
+  return [
+    'passage:',
+    `emoji ${emoji.emoji}.`,
+    `${locale.label} name ${localizedName}.`,
+    `${locale.label} terms ${localizedTokenText}.`,
+    `English name ${emoji.name}.`,
+    `English keywords ${englishKeywordText}.`,
+    `Category ${emoji.group}.`,
+    `Subcategory ${emoji.subgroup}.`,
+  ].join(' ');
 }
 
 function writeContributorCatalogCsv(emojis: EmojiEntry[]) {
   const header = ['Hex', 'Emoji', 'English Name', 'Extra Keywords'];
   const rows = emojis.map((emoji) =>
-    [
-      emoji.codePoints,
-      emoji.emoji,
-      emoji.name,
-      '',
-    ]
-      .map(escapeCsvValue)
-      .join(',')
+    [emoji.codePoints, emoji.emoji, emoji.name, ''].map(escapeCsvValue).join(',')
   );
 
   fs.mkdirSync(path.dirname(CONTRIBUTOR_CATALOG_CSV_PATH), { recursive: true });
@@ -225,15 +219,18 @@ async function parseUnicodeEmojiTest(text: string): Promise<EmojiEntry[]> {
   const emojis: EmojiEntry[] = [];
   let currentGroup = '';
   let currentSubgroup = '';
+
   for (const line of lines) {
     if (line.startsWith('# group:')) {
       currentGroup = line.replace('# group:', '').trim();
       continue;
     }
+
     if (line.startsWith('# subgroup:')) {
       currentSubgroup = line.replace('# subgroup:', '').trim();
       continue;
     }
+
     if (!line || line.startsWith('#')) continue;
     const match = line.match(/^([^;]+);([^#]+)# ([^ ]+) E([^ ]+) (.+)$/);
     if (match) {
@@ -247,104 +244,111 @@ async function parseUnicodeEmojiTest(text: string): Promise<EmojiEntry[]> {
       });
     }
   }
+
   return emojis;
 }
 
 async function parseCLDRAnnotations(xmlText: string): Promise<Record<string, LocalizedEntry>> {
   const result = await parseStringPromise(xmlText);
-  if (!result.ldml || !result.ldml.annotations || !result.ldml.annotations[0] || !result.ldml.annotations[0].annotation) {
+  if (
+    !result.ldml ||
+    !result.ldml.annotations ||
+    !result.ldml.annotations[0] ||
+    !result.ldml.annotations[0].annotation
+  ) {
     return {};
   }
+
   const annotations = result.ldml.annotations[0].annotation;
   const data: Record<string, LocalizedEntry> = {};
+
   for (const entry of annotations) {
     if (!entry.$ || !entry.$.cp) continue;
     const emoji = entry.$.cp;
     const type = entry.$.type;
     const value = entry._;
     if (!value) continue;
-    
+
     if (!data[emoji]) data[emoji] = { name: '', keywords: [] };
     if (type === 'tts') data[emoji].name = value;
-    else data[emoji].keywords = value.split('|').map((k: string) => k.trim());
+    else data[emoji].keywords = value.split('|').map((keyword: string) => keyword.trim());
   }
+
   return data;
+}
+
+function mergeAnnotations(
+  target: Record<string, LocalizedEntry>,
+  source: Record<string, LocalizedEntry>
+) {
+  for (const [emoji, entry] of Object.entries(source)) {
+    if (!target[emoji]) {
+      target[emoji] = entry;
+      continue;
+    }
+
+    if (!target[emoji].name && entry.name) {
+      target[emoji].name = entry.name;
+    }
+
+    target[emoji].keywords = Array.from(new Set([...target[emoji].keywords, ...entry.keywords]));
+  }
+}
+
+async function fetchLocaleAnnotations(cldrLocale: string): Promise<Record<string, LocalizedEntry>> {
+  const baseUrl = `${CLDR_BASE_URL}/annotations/${cldrLocale}.xml`;
+  const derivedUrl = `${CLDR_BASE_URL}/annotationsDerived/${cldrLocale}.xml`;
+
+  const baseAnnotations = await parseCLDRAnnotations(await fetchText(baseUrl));
+  try {
+    const derivedAnnotations = await parseCLDRAnnotations(await fetchText(derivedUrl));
+    mergeAnnotations(baseAnnotations, derivedAnnotations);
+  } catch (error) {
+    console.warn(`Failed to fetch derived annotations for ${cldrLocale}, proceeding without them.`);
+  }
+
+  return baseAnnotations;
+}
+
+function getExtraKeywordsFilePath(locale: LocaleConfig): string {
+  return path.join(process.cwd(), `data/locales/${locale.id}-extra-keywords.csv`);
+}
+
+function getIndexFilePath(locale: LocaleConfig): string {
+  return path.join(process.cwd(), `public/data/emoji/emoji-index-${locale.id}.json`);
+}
+
+function getVectorFilePath(locale: LocaleConfig): string {
+  return path.join(process.cwd(), `public/data/emoji/emoji-vectors-${locale.id}.json`);
+}
+
+function getManifestEntryKey(localeId: string, codePoints: string): string {
+  return `${localeId}:${codePoints}`;
 }
 
 async function main() {
   try {
     console.log(`Fetching Unicode ${UNICODE_VERSION} emoji list...`);
     const emojiText = await fetchText(EMOJI_TEST_URL);
-    console.log(`Fetching CLDR English annotations...`);
-    const cldrEnXml = await fetchText(CLDR_EN_URL);
-    console.log(`Fetching CLDR Myanmar annotations...`);
-    const cldrXml = await fetchText(CLDR_MY_URL);
-    let cldrEnDerivedXml = '';
-    let cldrDerivedXml = '';
-    try {
-      console.log(`Fetching CLDR derived English annotations...`);
-      cldrEnDerivedXml = await fetchText(CLDR_EN_DERIVED_URL);
-    } catch (err) {
-      console.warn('Failed to fetch derived English annotations, proceeding without them.');
-    }
-    try {
-      console.log(`Fetching CLDR derived Myanmar annotations...`);
-      cldrDerivedXml = await fetchText(CLDR_MY_DERIVED_URL);
-    } catch (err) {
-      console.warn('Failed to fetch derived annotations, proceeding without them.');
+    console.log('Fetching English CLDR annotations...');
+    const englishAnnotations = await fetchLocaleAnnotations('en');
+
+    const localeAnnotations = new Map<string, Record<string, LocalizedEntry>>();
+    localeAnnotations.set('en', englishAnnotations);
+
+    for (const locale of SUPPORTED_LOCALES) {
+      if (locale.id === 'en') continue;
+      console.log(`Fetching ${locale.label} CLDR annotations...`);
+      localeAnnotations.set(locale.id, await fetchLocaleAnnotations(locale.cldrLocale));
     }
 
     const baseEmojis = await parseUnicodeEmojiTest(emojiText);
-    const englishAnnotations = await parseCLDRAnnotations(cldrEnXml);
-    let englishDerivedAnnotations: Record<string, LocalizedEntry> = {};
-    if (cldrEnDerivedXml) {
-      englishDerivedAnnotations = await parseCLDRAnnotations(cldrEnDerivedXml);
-    }
-    const burmeseAnnotations = await parseCLDRAnnotations(cldrXml);
-    let burmeseDerivedAnnotations: Record<string, LocalizedEntry> = {};
-    if (cldrDerivedXml) {
-       burmeseDerivedAnnotations = await parseCLDRAnnotations(cldrDerivedXml);
-    }
+    const qualifiedEmojis = baseEmojis.filter((base) => base.status === 'fully-qualified');
+    writeContributorCatalogCsv(qualifiedEmojis);
 
-    function mergeAnnotations(
-      target: Record<string, LocalizedEntry>,
-      source: Record<string, LocalizedEntry>
-    ) {
-      for (const [emoji, entry] of Object.entries(source)) {
-        if (!target[emoji]) {
-          target[emoji] = entry;
-        } else {
-          if (!target[emoji].name && entry.name) {
-            target[emoji].name = entry.name;
-          }
-          target[emoji].keywords = Array.from(
-            new Set([...target[emoji].keywords, ...entry.keywords])
-          );
-        }
-      }
-    }
-
-    mergeAnnotations(englishAnnotations, englishDerivedAnnotations);
-    mergeAnnotations(burmeseAnnotations, burmeseDerivedAnnotations);
-
-    const extraKeywordsMy = parseExtraKeywordsCsv(EXTRA_KEYWORDS_CSV_PATH);
-    const existingLexicalData = loadJsonIfExists<EmojiLexicalEntry[]>(
-      path.join(process.cwd(), 'public/data/emoji/emoji-index-my.json')
-    ) ?? [];
-    const existingVectorData = loadJsonIfExists<EmojiVectorEntry[]>(
-      path.join(process.cwd(), 'public/data/emoji/emoji-vectors-my.json')
-    ) ?? [];
     const existingManifest = loadJsonIfExists<BuildManifest>(BUILD_MANIFEST_PATH);
-
-    const previousLexicalByCodePoints = new Map(
-      existingLexicalData.map((entry) => [entry.codePoints, entry])
-    );
-    const previousVectorsByCodePoints = new Map(
-      existingVectorData.map((entry) => [entry.codePoints, entry.embedding])
-    );
     const previousManifestEntries =
-      existingManifest?.modelName === MODEL_NAME &&
-      existingManifest?.unicodeVersion === UNICODE_VERSION
+      existingManifest?.modelName === MODEL_NAME && existingManifest?.unicodeVersion === UNICODE_VERSION
         ? existingManifest.entries
         : undefined;
 
@@ -357,112 +361,147 @@ async function main() {
     let extractorPromise: Promise<{
       (text: string, options: { pooling: 'mean'; normalize: true }): Promise<{ data: Iterable<number> }>;
     }> | null = null;
+
     async function getExtractor() {
       if (!extractorPromise) {
-        console.log(`Loading transformer pipeline... this may take a moment to drop the model locally.`);
+        console.log('Loading transformer pipeline... this may take a moment to drop the model locally.');
         extractorPromise = createExtractor('feature-extraction', MODEL_NAME);
       }
 
       return extractorPromise;
     }
 
-    const qualifiedEmojis = baseEmojis.filter(base => base.status === 'fully-qualified');
-    writeContributorCatalogCsv(qualifiedEmojis);
-    const localizedEmojis: LocalizedEmojiEntry[] = qualifiedEmojis.map((base) => {
-      const enLocalized = englishAnnotations[base.emoji] || { name: '', keywords: [] };
-      const myLocalized = burmeseAnnotations[base.emoji] || { name: '', keywords: [] };
-      const contributed = extraKeywordsMy[base.codePoints]?.keywords || [];
-      const myName = myLocalized.name || base.name;
-      const englishKeywords = Array.from(
-        new Set(
-          enLocalized.keywords
-            .map((keyword) => keyword.trim())
-            .filter((keyword) => keyword && keyword.toLowerCase() !== base.name.toLowerCase())
-        )
-      );
-      const myKeywords = Array.from(
-        new Set([...myLocalized.keywords, ...contributed])
-      );
-
-      return {
-        ...base,
-        contributorKeywords: contributed,
-        englishKeywords,
-        myKeywords,
-        myName,
-      };
-    });
-    const searchLexicon = buildEmojiSearchLexicon(localizedEmojis);
-
-    console.log(`Generating Burmese index (${localizedEmojis.length} emojis)...`);
-    const myData: EmojiLexicalEntry[] = [];
-    const vectorData: EmojiVectorEntry[] = [];
     const manifestEntries: BuildManifest['entries'] = {};
-    let count = 0;
+    const semanticLocales = SUPPORTED_LOCALES.filter((locale) => locale.semanticEnabled);
     let reusedCount = 0;
     let regeneratedCount = 0;
 
-    for (const base of localizedEmojis) {
-      if (++count % 500 === 0) console.log(`Processed ${count}/${localizedEmojis.length}...`);
-
-      const metadata = buildBurmeseSearchMetadata(base.myName, base.myKeywords, searchLexicon);
-      const lexicalEntry: EmojiLexicalEntry = {
-        emoji: base.emoji,
-        codePoints: base.codePoints,
-        enName: base.name,
-        englishKeywords: base.englishKeywords,
-        myName: base.myName,
-        displayName: base.myName,
-        keywords: base.myKeywords,
-        group: base.group,
-        subgroup: base.subgroup,
-        contributorKeywords: base.contributorKeywords,
-        wordTokens: metadata.wordTokens,
-      };
-      const textToEmbed = buildPassageText(
-        base,
-        base.myName,
-        base.myKeywords,
-        metadata.wordTokens
+    for (const locale of SUPPORTED_LOCALES) {
+      const localizedAnnotations = localeAnnotations.get(locale.id) ?? {};
+      const extraKeywords = parseExtraKeywordsCsv(getExtraKeywordsFilePath(locale));
+      const existingLexicalData =
+        loadJsonIfExists<EmojiLexicalEntry[]>(getIndexFilePath(locale)) ?? [];
+      const previousLexicalByCodePoints = new Map(
+        existingLexicalData.map((entry) => [entry.codePoints, entry])
       );
-      const embeddingInputHash = sha256(textToEmbed);
-      const previousLexicalEntry = previousLexicalByCodePoints.get(base.codePoints);
-      const previousEmbedding = previousVectorsByCodePoints.get(base.codePoints);
-      const previousHash = previousManifestEntries?.[base.codePoints]?.embeddingInputHash;
+      const existingVectorData =
+        locale.semanticEnabled
+          ? loadJsonIfExists<EmojiVectorEntry[]>(getVectorFilePath(locale)) ?? []
+          : [];
+      const previousVectorsByCodePoints = new Map(
+        existingVectorData.map((entry) => [entry.codePoints, entry.embedding])
+      );
 
-      let embedding: number[];
-      const canReuseFromManifest =
-        !FORCE_FULL_REBUILD &&
-        previousEmbedding &&
-        previousHash === embeddingInputHash;
-      const canReuseFromLexicalMatch =
-        !FORCE_FULL_REBUILD &&
-        previousEmbedding &&
-        !previousHash &&
-        canReuseExistingEmbedding(lexicalEntry, previousLexicalEntry);
+      const localizedEmojis: LocalizedEmojiEntry[] = qualifiedEmojis.map((base) => {
+        const annotation = localizedAnnotations[base.emoji] || { name: '', keywords: [] };
+        const contributed = extraKeywords[base.codePoints]?.keywords || [];
+        const englishKeywords = Array.from(
+          new Set(
+            (englishAnnotations[base.emoji]?.keywords ?? [])
+              .map((keyword) => keyword.trim())
+              .filter((keyword) => keyword && keyword.toLowerCase() !== base.name.toLowerCase())
+          )
+        );
+        const localizedName = annotation.name || base.name;
+        const localizedKeywords = Array.from(new Set([...annotation.keywords, ...contributed]));
 
-      if (canReuseFromManifest || canReuseFromLexicalMatch) {
-        embedding = previousEmbedding;
-        reusedCount++;
-      } else {
-        const extractor = await getExtractor();
-        const output = await extractor(textToEmbed, { pooling: 'mean', normalize: true }) as {
-          data: Iterable<number>;
+        return {
+          ...base,
+          contributorKeywords: contributed,
+          englishKeywords,
+          localizedKeywords,
+          localizedName,
         };
-        embedding = Array.from(output.data);
-        regeneratedCount++;
+      });
+
+      const searchLexicon =
+        locale.searchStrategy === 'burmese'
+          ? buildEmojiSearchLexicon(localizedEmojis)
+          : null;
+
+      console.log(`Generating ${locale.label} index (${localizedEmojis.length} emojis)...`);
+      const lexicalData: EmojiLexicalEntry[] = [];
+      const vectorData: EmojiVectorEntry[] = [];
+      let count = 0;
+
+      for (const base of localizedEmojis) {
+        if (++count % 500 === 0) {
+          console.log(`[${locale.id}] Processed ${count}/${localizedEmojis.length}...`);
+        }
+
+        const metadata =
+          locale.searchStrategy === 'burmese' && searchLexicon
+            ? buildBurmeseSearchMetadata(base.localizedName, base.localizedKeywords, searchLexicon)
+            : { wordTokens: [] };
+        const lexicalEntry: EmojiLexicalEntry = {
+          emoji: base.emoji,
+          codePoints: base.codePoints,
+          contributorKeywords: base.contributorKeywords,
+          displayName: base.localizedName,
+          enName: base.name,
+          englishKeywords: base.englishKeywords,
+          group: base.group,
+          localizedKeywords: base.localizedKeywords,
+          localizedName: base.localizedName,
+          subgroup: base.subgroup,
+          wordTokens: metadata.wordTokens,
+        };
+
+        lexicalData.push(lexicalEntry);
+
+        if (!locale.semanticEnabled) {
+          continue;
+        }
+
+        const textToEmbed = buildPassageText(
+          locale,
+          base,
+          base.localizedName,
+          base.localizedKeywords,
+          base.englishKeywords,
+          metadata.wordTokens
+        );
+        const embeddingInputHash = sha256(textToEmbed);
+        const previousLexicalEntry = previousLexicalByCodePoints.get(base.codePoints);
+        const previousEmbedding = previousVectorsByCodePoints.get(base.codePoints);
+        const previousHash =
+          previousManifestEntries?.[getManifestEntryKey(locale.id, base.codePoints)]?.embeddingInputHash;
+
+        let embedding: number[];
+        const canReuseFromManifest =
+          !FORCE_FULL_REBUILD && previousEmbedding && previousHash === embeddingInputHash;
+        const canReuseFromLexicalMatch =
+          !FORCE_FULL_REBUILD &&
+          previousEmbedding &&
+          !previousHash &&
+          canReuseExistingEmbedding(lexicalEntry, previousLexicalEntry);
+
+        if (canReuseFromManifest || canReuseFromLexicalMatch) {
+          embedding = previousEmbedding;
+          reusedCount++;
+        } else {
+          const extractor = await getExtractor();
+          const output = (await extractor(textToEmbed, {
+            pooling: 'mean',
+            normalize: true,
+          })) as { data: Iterable<number> };
+          embedding = Array.from(output.data);
+          regeneratedCount++;
+        }
+
+        manifestEntries[getManifestEntryKey(locale.id, base.codePoints)] = { embeddingInputHash };
+        vectorData.push({
+          codePoints: base.codePoints,
+          embedding,
+        });
       }
 
-      manifestEntries[base.codePoints] = { embeddingInputHash };
-      myData.push(lexicalEntry);
-
-      vectorData.push({
-        codePoints: base.codePoints,
-        embedding,
-      });
+      fs.writeFileSync(getIndexFilePath(locale), JSON.stringify(lexicalData));
+      if (locale.semanticEnabled) {
+        fs.writeFileSync(getVectorFilePath(locale), JSON.stringify(vectorData));
+      }
     }
-    fs.writeFileSync(path.join(process.cwd(), 'public/data/emoji/emoji-index-my.json'), JSON.stringify(myData));
-    fs.writeFileSync(path.join(process.cwd(), 'public/data/emoji/emoji-vectors-my.json'), JSON.stringify(vectorData));
+
     fs.writeFileSync(
       BUILD_MANIFEST_PATH,
       JSON.stringify({
@@ -473,25 +512,12 @@ async function main() {
       } satisfies BuildManifest)
     );
 
-    const enData = qualifiedEmojis.map(base => ({
-      emoji: base.emoji,
-      codePoints: base.codePoints,
-      enName: base.name,
-      displayName: base.name,
-      keywords: [],
-      group: base.group,
-      subgroup: base.subgroup
-    }));
-    fs.writeFileSync(path.join(process.cwd(), 'public/data/emoji/emoji-index-en.json'), JSON.stringify(enData));
-
-    console.log(`Done! Indices rebuilt.`);
+    console.log('Done! Indices rebuilt.');
+    console.log(`Supported locales: ${SUPPORTED_LOCALES.map((locale) => locale.id).join(', ')}`);
+    console.log(`Semantic locales: ${semanticLocales.map((locale) => locale.id).join(', ')}`);
     console.log(`Embeddings reused: ${reusedCount}`);
     console.log(`Embeddings regenerated: ${regeneratedCount}`);
-    if (FORCE_FULL_REBUILD) {
-      console.log(`Mode: full rebuild`);
-    } else {
-      console.log(`Mode: incremental rebuild`);
-    }
+    console.log(`Mode: ${FORCE_FULL_REBUILD ? 'full rebuild' : 'incremental rebuild'}`);
     console.log(`Contributor catalog written to ${CONTRIBUTOR_CATALOG_CSV_PATH}`);
   } catch (error) {
     console.error('Error generating data:', error);

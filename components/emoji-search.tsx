@@ -1,9 +1,10 @@
 "use client"
 
 import { memo, useDeferredValue, useMemo, useState, useEffect, useRef } from "react"
-import { Search, Check, Sparkles, Loader2, BrainCircuit, Info, Palette } from "lucide-react"
+import { Search, Check, Sparkles, Loader2, BrainCircuit, Info, Palette, Languages } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { loadEmojiData, type EmojiItem } from "@/lib/emoji-data"
+import { DEFAULT_LOCALE_ID, getLocaleConfig, SUPPORTED_LOCALES } from "@/lib/locale-config"
 import {
   SKIN_TONE_LABELS,
   SKIN_TONE_ORDER,
@@ -13,6 +14,7 @@ import {
 } from "@/lib/emoji-skin-tone"
 import { cn } from "@/lib/utils"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -21,6 +23,7 @@ import { toast } from "sonner"
 
 export default function EmojiSearch() {
   const [allEmojis, setAllEmojis] = useState<EmojiItem[]>([])
+  const [localeId, setLocaleId] = useState(DEFAULT_LOCALE_ID)
   const [searchTerm, setSearchTerm] = useState("")
   const [copiedEmoji, setCopiedEmoji] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -30,6 +33,7 @@ export default function EmojiSearch() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const latestSearchTermRef = useRef("")
   const deferredSearchTerm = useDeferredValue(searchTerm)
+  const locale = useMemo(() => getLocaleConfig(localeId), [localeId])
 
   useEffect(() => {
     latestSearchTermRef.current = searchTerm
@@ -39,18 +43,24 @@ export default function EmojiSearch() {
   useEffect(() => {
     const init = async () => {
       setIsLoading(true)
-      const data = await loadEmojiData()
+      const data = await loadEmojiData(localeId)
       setAllEmojis(data)
       setIsLoading(false)
     }
     init()
-  }, [])
+  }, [localeId])
 
   // 2. Transformer Semantic Search Hook
-  const { results, search, isSearching, modelLoading } = useSemanticSearch(allEmojis, isSemantic)
+  const { results, search, isSearching, modelLoading, semanticAvailable } = useSemanticSearch(allEmojis, isSemantic, localeId)
   const skinToneOptionsByBase = useMemo(() => buildSkinToneOptionsMap(allEmojis), [allEmojis])
 
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  useEffect(() => {
+    if (!semanticAvailable && isSemantic) {
+      setIsSemantic(false)
+    }
+  }, [isSemantic, semanticAvailable])
 
   // 3. Search triggers
   useEffect(() => {
@@ -106,6 +116,26 @@ export default function EmojiSearch() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4">
+        <div className="flex justify-end animate-slide-up" style={{ animationDelay: "0.05s" }}>
+          <div className="w-auto">
+            <Select value={localeId} onValueChange={setLocaleId}>
+              <SelectTrigger className="h-9 min-w-[124px] rounded-full border bg-card/80 px-3 text-xs shadow-sm">
+                <div className="flex items-center gap-2 pr-2">
+                  <Languages className="h-3.5 w-3.5 text-muted-foreground" />
+                  <SelectValue placeholder="Language" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                {SUPPORTED_LOCALES.map((supportedLocale) => (
+                  <SelectItem key={supportedLocale.id} value={supportedLocale.id}>
+                    {supportedLocale.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
         <div className="flex flex-col md:flex-row gap-4 items-center">
           {/* Search Input */}
           <div className="relative flex-1 w-full animate-slide-up" style={{ animationDelay: "0.1s" }}>
@@ -122,7 +152,7 @@ export default function EmojiSearch() {
               ref={searchInputRef}
               type="text"
               disabled={isLoading}
-              placeholder="ဥပမာ - ပျော်ရွှင်"
+              placeholder={locale.placeholder}
               className={cn(
                 "pl-12 pr-4 py-6 text-lg rounded-2xl border-2 transition-all duration-300",
                 "bg-card shadow-lg focus:shadow-xl",
@@ -162,7 +192,7 @@ export default function EmojiSearch() {
               id="semantic-mode" 
               checked={isSemantic} 
               onCheckedChange={setIsSemantic}
-              disabled={isLoading}
+              disabled={isLoading || !semanticAvailable}
             />
             <Label htmlFor="semantic-mode" className="flex items-center gap-1.5 cursor-pointer">
               Semantic Search
@@ -178,11 +208,15 @@ export default function EmojiSearch() {
               </TooltipProvider>
             </Label>
           </div>
-          {modelLoading && (
+          {!semanticAvailable ? (
+            <span className="text-xs text-muted-foreground">
+              Semantic search is not available for {locale.label} yet.
+            </span>
+          ) : modelLoading ? (
             <span className="text-xs text-primary animate-pulse font-medium">
               Loading semantic index...
             </span>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -193,12 +227,12 @@ export default function EmojiSearch() {
             <div className="flex items-center gap-1">
               <Sparkles className="h-5 w-5 text-primary animate-bounce-soft" />
               <span className="text-muted-foreground">
-                စာရိုက်ပြီး စတင်ရှာဖွေပါ
+                {locale.label === "Burmese" ? "စာရိုက်ပြီး စတင်ရှာဖွေပါ" : `Start searching in ${locale.label}`}
               </span>
               <Sparkles className="h-5 w-5 text-primary animate-bounce-soft" style={{ animationDelay: "0.5s" }} />
             </div>
             <div className="flex flex-wrap justify-center gap-2 text-sm text-muted-foreground/60 max-w-md">
-              {["ပင်လယ်ကမ်းခြေ", "ငြိမ်းချမ်းရေး", "အချစ်", "တိရစ္ဆာန်"].map(word => (
+              {locale.examples.map(word => (
                 <button 
                   key={word}
                   onClick={() => setSearchTerm(word)}

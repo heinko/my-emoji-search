@@ -1,13 +1,19 @@
 import Link from "next/link"
 import { ArrowUpRight } from "lucide-react"
 
-const creditSections = [
+type CreditItem = {
+  href?: string
+  name: string
+  note: string
+}
+
+const creditSections: Array<{ title: string; items: CreditItem[] }> = [
   {
     title: "Project",
     items: [
       {
         name: "Heinko",
-        note: "Creator and maintainer of Burmese Emoji Search. This project was also vibe coded with help from Codex and v0.",
+        note: "Creator and maintainer of Myanmar Emoji Search. This project was also vibe coded with help from Codex and v0.",
       },
       {
         name: "Codex",
@@ -72,8 +78,8 @@ const creditSections = [
 ]
 
 export const metadata = {
-  title: "Credits | Burmese Emoji Search",
-  description: "Credits, sources, datasets, and tools used to build Burmese Emoji Search.",
+  title: "Credits | Myanmar Emoji Search",
+  description: "Credits, sources, datasets, and tools used to build Myanmar Emoji Search.",
 }
 
 export default function CreditsPage() {
@@ -103,7 +109,7 @@ export default function CreditsPage() {
 
           <div className="space-y-4">
             <h1 className="text-3xl font-semibold tracking-tight md:text-5xl">
-              Credits, sources, and tools behind Burmese Emoji Search
+              Credits, sources, and tools behind Myanmar Emoji Search
             </h1>
             <p className="text-base leading-8 text-muted-foreground md:text-lg">
               This project is built with public language resources, Unicode emoji data, open-source

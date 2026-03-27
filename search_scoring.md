@@ -1,13 +1,14 @@
-# Burmese Emoji Search Scoring
+# Myanmar Emoji Search Scoring
 
 This document reflects the current ranking implementation in [lib/search-ranking.ts](/Users/heink/v0-burmese-emoji-search-su/lib/search-ranking.ts).
 
 ## Summary
 
-The current search stack is hybrid:
+The current search stack is hybrid and locale-aware:
 
 - lexical scoring is always computed in the browser
-- semantic scoring is optional and only runs when semantic mode is enabled
+- semantic scoring is optional and currently enabled only for Burmese
+- English keywords are always merged into every supported locale
 - cohort boosting is triggered from strong combined lexical + semantic candidates
 - skin-tone variants are collapsed for presentation
 - browser console debug logging is available for every search
@@ -16,53 +17,63 @@ The current search stack is hybrid:
 
 The query is normalized to lowercase and trimmed first.
 
-### English queries
+### Generic locale queries
 
-For non-Burmese queries:
+For locales using the generic strategy, such as Shan and English:
 
-- `englishTokens` are extracted with a simple alphanumeric tokenizer
+- `englishTokens` are extracted with the shared alphanumeric tokenizer
 - `semanticViews` contains the normalized query as one view
-- Burmese segmentation is skipped
+- no Burmese segmentation is attempted
 
 ### Burmese queries
 
-For Burmese queries:
+For Burmese locale searches where Myanmar text is detected:
 
-- `compactQuery` is generated with the Myanmar text compaction rules
+- `compactQuery` is generated with Myanmar text compaction rules
 - `segmentedTerms` come from the oppaWord-inspired segmenter
 - `semanticViews` include the original Burmese query plus the segmented view when available
 
-This keeps ranking focused on word-level evidence instead of syllable-only overlap.
+This keeps Burmese ranking focused on word-level evidence instead of syllable-only overlap.
 
-## 2. English Lexical Scoring
+## 2. Generic Locale Lexical Scoring
 
-English lexical scoring uses:
+Generic lexical scoring uses:
 
+- `localizedName`
+- `localizedKeywords`
+- `contributorKeywords`
 - `enName`
+- `englishKeywords`
 - `group`
 - `subgroup`
-- `enTokens`
 
 ### Score components
 
-- exact full-field match: `+2.2`
-- phrase match inside an English field: `+1.0`
-- token overlap: up to `+0.9`
+- exact localized field match: `+4.4`
+- localized substring or phrase support: `+1.2`
+- localized token overlap: up to `+2.2`
+- full localized token coverage bonus: `+1.3`
+- exact English field match: `+2.2`
+- English phrase match: `+1.0`
+- English token overlap: up to `+2.4`
+- full English token coverage bonus: `+1.8`
 
-The token-overlap term is:
+### Important behavior
 
-- `matchedWords / queryTokens.length * 0.9`
+- localized terms are stronger than English fallback terms
+- English still broadens recall in every locale
+- Shan currently uses this generic path
+- English locale also uses this same generic path
 
 ## 3. Burmese Lexical Scoring
 
 Burmese lexical scoring uses:
 
-- `myName`
-- `keywords`
+- `localizedName`
+- `localizedKeywords`
 - `wordTokens`
 - `contributorKeywords`
-
-`searchTextMy` is no longer part of runtime ranking.
+- English fallback terms in the same emoji record
 
 ### Score components
 
@@ -73,7 +84,7 @@ Burmese lexical scoring uses:
 - exact or substring contributor-keyword match: `+2.3`
 - segmented term coverage: up to `+2.0`
 - full segmented-term coverage bonus for multi-term queries: `+0.5`
-- phrase + segmented support bonus: `+0.6`
+- phrase plus segmented support bonus: `+0.6`
 - contributor-keyword segmented coverage: up to `+1.3`
 - expanded segmented-term support: up to `+0.45`
 
@@ -85,12 +96,16 @@ Burmese lexical scoring uses:
 
 ## 4. Semantic Scoring
 
-Semantic scoring only runs when semantic mode is enabled.
+Semantic scoring only runs when semantic mode is enabled for the selected locale.
+
+Current semantic-enabled locale:
+
+- Burmese (`my`)
 
 ### Inputs
 
 - query embeddings from `/api/embed`
-- precomputed emoji embeddings from `emoji-vectors-my.json`
+- precomputed emoji embeddings from `emoji-vectors-<locale>.json`
 
 ### Similarity calculation
 
@@ -140,8 +155,6 @@ A candidate becomes a cohort seed when:
 
 - `lexicalScore + semanticBoost > 10`
 
-Position does not matter. The scorer inspects all candidates that clear that combined threshold.
-
 ### Cohort detection
 
 From those seed candidates:
@@ -149,7 +162,7 @@ From those seed candidates:
 - if at least 2 share the same `subgroup`, that `subgroup` becomes dominant
 - if at least 2 share the same `group`, that `group` becomes dominant
 
-The seed list is sorted by combined `lexicalScore + semanticBoost`, but the dominant cohort itself is chosen by the summed lexical strength of agreeing seeds.
+The dominant cohort is chosen by the summed lexical strength of agreeing seeds.
 
 ### Cohort boosts
 
@@ -162,7 +175,6 @@ Guardrails:
 
 - seed emojis themselves do not get a cohort boost
 - a candidate still needs some lexical evidence of its own before cohort boosting applies
-- cohort boosting is only applied after a dominant `group` or `subgroup` is established
 
 ## 6. Skin Tone Behavior
 
@@ -179,7 +191,7 @@ Current behavior:
 For each emoji:
 
 - compute lexical score
-- compute semantic boost
+- compute semantic boost if enabled for the locale
 - infer dominant cohort from candidates whose `lexical + semantic > 10`
 - add cohort boost if the emoji matches that dominant `group` or `subgroup`
 - combine into the final score:
@@ -187,8 +199,8 @@ For each emoji:
 
 Then:
 
-- Burmese results must score above `5`
-- non-Burmese results must score above `4`
+- Burmese segmented queries must score above `5`
+- generic locale queries must score above `4`
 - results are sorted descending by final score
 - skin-tone variants are collapsed unless the query explicitly requests tones
 - the final list is truncated to the top `48`
@@ -200,6 +212,7 @@ The browser logs ranking debug information for each search.
 Current debug output includes:
 
 - query analysis details
+- selected search strategy
 - detected dominant `group` and `subgroup`
 - every ranked result, not just the top slice
 - per-result columns for:

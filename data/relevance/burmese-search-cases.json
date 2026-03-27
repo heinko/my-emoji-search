@@ -24,5 +24,9 @@
   { "query": "heart", "expectedTop10": ["❤️", "💗", "💓"], "minimumHits": 1 },
   { "query": "happy", "expectedTop10": ["😀", "🙂", "😄"], "minimumHits": 1 },
   { "query": "laugh", "expectedTop10": ["🤣", "😂", "😆"], "minimumHits": 1 },
-  { "query": "doctor", "expectedTop10": ["🩺", "🏥", "💉", "🥼"], "minimumHits": 1 }
+  { "query": "doctor", "expectedTop10": ["🩺", "🏥", "💉", "🥼"], "minimumHits": 1 },
+  { "localeId": "en", "query": "happy", "expectedTop10": ["😀", "🙂", "😄"], "minimumHits": 1 },
+  { "localeId": "en", "query": "doctor", "expectedTop10": ["🩺", "🏥", "💉", "🥼"], "minimumHits": 1 },
+  { "localeId": "shn", "query": "မႅဝ်း", "expectedTop10": ["🐱", "🐈"], "minimumHits": 1 },
+  { "localeId": "shn", "query": "happy", "expectedTop10": ["😀", "🙂", "😄"], "minimumHits": 1 }
 ]

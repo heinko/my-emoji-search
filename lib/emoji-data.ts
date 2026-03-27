@@ -1,18 +1,19 @@
 import { buildBurmeseSearchMetadata, buildEmojiSearchLexicon } from './burmese-search';
 import { getSkinToneMetadata, type SkinToneId } from './emoji-skin-tone';
+import { getLocaleConfig } from './locale-config';
 import { sylbreak } from './sylbreak';
 
 export interface EmojiItem {
   emoji: string;
   codePoints: string;
   contributorKeywords?: string[];
-  englishKeywords?: string[];
-  name: string;
-  enName: string;
-  myName: string;
   displayName: string;
-  keywords: string[];
+  enName: string;
+  englishKeywords?: string[];
   group: string;
+  localizedKeywords: string[];
+  localizedName: string;
+  localizedTokens?: string[];
   subgroup: string;
   embedding?: number[];
   enTokens?: string[];
@@ -80,33 +81,33 @@ function tokenizeEnglish(text: string): string[] {
   return Array.from(new Set(expandedTokens)).filter(Boolean);
 }
 
-// Cache the lexical dataset in memory so we don't re-parse it repeatedly.
-let cachedEmojiData: EmojiItem[] | null = null;
-let cachedEmojiEmbeddingMap: Map<string, number[]> | null = null;
-let cachedEmojiEmbeddingPromise: Promise<Map<string, number[]>> | null = null;
+const cachedEmojiData = new Map<string, EmojiItem[]>();
+const cachedEmojiEmbeddingMaps = new Map<string, Map<string, number[]>>();
+const cachedEmojiEmbeddingPromises = new Map<string, Promise<Map<string, number[]>>>();
 
-export async function loadEmojiData(): Promise<EmojiItem[]> {
+export async function loadEmojiData(localeId: string): Promise<EmojiItem[]> {
+  const localeConfig = getLocaleConfig(localeId);
+
   try {
     let rawData: EmojiItem[];
-    
-    if (cachedEmojiData) {
-      rawData = JSON.parse(JSON.stringify(cachedEmojiData)); // deep copy to allow modifications
+
+    if (cachedEmojiData.has(localeId)) {
+      rawData = JSON.parse(JSON.stringify(cachedEmojiData.get(localeId)));
     } else {
-      // Fetch the Burmese lexical index. Semantic embeddings live in a separate file
-      // so the default browser load stays smaller unless semantic mode is enabled.
-      const response = await fetch(`/data/emoji/emoji-index-my.json`);
+      const response = await fetch(`/data/emoji/emoji-index-${localeId}.json`);
       if (!response.ok) throw new Error(`Failed to fetch emoji data: ${response.statusText}`);
       rawData = await response.json();
-      
-      // Yield to main thread briefly before heavy work
-      await new Promise(resolve => setTimeout(resolve, 0));
 
-      const needsSearchEnrichment = rawData.some(
-        (emoji) => !emoji.wordTokens?.length
-      );
-      const lexicon = needsSearchEnrichment ? buildEmojiSearchLexicon(rawData) : null;
-      
-      // Pre-calculate search helpers once
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const needsSearchEnrichment =
+        localeConfig.searchStrategy === 'burmese' &&
+        rawData.some((emoji) => !emoji.wordTokens?.length);
+      const lexicon =
+        localeConfig.searchStrategy === 'burmese' && needsSearchEnrichment
+          ? buildEmojiSearchLexicon(rawData)
+          : null;
+
       for (const emoji of rawData) {
         const skinToneMetadata = getSkinToneMetadata(emoji.codePoints);
         emoji.baseCodePoints = skinToneMetadata.baseCodePoints;
@@ -115,8 +116,8 @@ export async function loadEmojiData(): Promise<EmojiItem[]> {
 
         if (lexicon && !emoji.wordTokens?.length) {
           const metadata = buildBurmeseSearchMetadata(
-            emoji.myName ?? '',
-            emoji.keywords ?? [],
+            emoji.localizedName ?? '',
+            emoji.localizedKeywords ?? [],
             lexicon
           );
           emoji.wordTokens = metadata.wordTokens;
@@ -127,13 +128,20 @@ export async function loadEmojiData(): Promise<EmojiItem[]> {
             .filter(Boolean)
             .join(' ')
         );
+        emoji.localizedTokens = tokenizeEnglish(
+          [emoji.localizedName, ...(emoji.localizedKeywords ?? []), ...(emoji.contributorKeywords ?? [])]
+            .filter(Boolean)
+            .join(' ')
+        );
 
-        if (emoji.myName) {
-          emoji.syllables = Array.from(new Set([
-            ...(emoji.wordTokens ?? []),
-            ...sylbreak(emoji.myName.toLowerCase()),
-            ...(emoji.keywords || []).flatMap(k => sylbreak(k.toLowerCase()))
-          ]));
+        if (localeConfig.searchStrategy === 'burmese' && emoji.localizedName) {
+          emoji.syllables = Array.from(
+            new Set([
+              ...(emoji.wordTokens ?? []),
+              ...sylbreak(emoji.localizedName.toLowerCase()),
+              ...emoji.localizedKeywords.flatMap((keyword) => sylbreak(keyword.toLowerCase())),
+            ])
+          );
         } else {
           emoji.syllables = [];
         }
@@ -149,54 +157,62 @@ export async function loadEmojiData(): Promise<EmojiItem[]> {
       }
 
       for (const emoji of rawData) {
-        emoji.supportsSkinTonePicker = (skinToneGroupCounts.get(emoji.baseCodePoints ?? '') ?? 0) > 1;
+        emoji.supportsSkinTonePicker =
+          (skinToneGroupCounts.get(emoji.baseCodePoints ?? '') ?? 0) > 1;
       }
-      
-      cachedEmojiData = rawData;
-      // Re-copy since we just mutated rawData
-      rawData = JSON.parse(JSON.stringify(cachedEmojiData));
+
+      cachedEmojiData.set(localeId, rawData);
+      rawData = JSON.parse(JSON.stringify(cachedEmojiData.get(localeId)));
     }
-    
-    // Set the display name
+
     for (const emoji of rawData) {
-      emoji.displayName = emoji.myName || emoji.enName;
+      emoji.displayName = emoji.localizedName || emoji.enName;
     }
-    
+
     return rawData;
   } catch (error) {
-    console.error(`Failed to load emoji data`, error);
+    console.error('Failed to load emoji data', error);
     return [];
   }
 }
 
-export async function loadEmojiEmbeddings(): Promise<Map<string, number[]>> {
-  if (cachedEmojiEmbeddingMap) {
-    return new Map(cachedEmojiEmbeddingMap);
+export async function loadEmojiEmbeddings(localeId: string): Promise<Map<string, number[]>> {
+  const localeConfig = getLocaleConfig(localeId);
+  if (!localeConfig.semanticEnabled) {
+    return new Map();
   }
 
-  if (cachedEmojiEmbeddingPromise) {
-    return cachedEmojiEmbeddingPromise.then((embeddingMap) => new Map(embeddingMap));
+  const cachedMap = cachedEmojiEmbeddingMaps.get(localeId);
+  if (cachedMap) {
+    return new Map(cachedMap);
   }
 
-  cachedEmojiEmbeddingPromise = (async () => {
-    const response = await fetch(`/data/emoji/emoji-vectors-my.json`);
+  const cachedPromise = cachedEmojiEmbeddingPromises.get(localeId);
+  if (cachedPromise) {
+    return cachedPromise.then((embeddingMap) => new Map(embeddingMap));
+  }
+
+  const promise = (async () => {
+    const response = await fetch(`/data/emoji/emoji-vectors-${localeId}.json`);
     if (!response.ok) throw new Error(`Failed to fetch emoji vectors: ${response.statusText}`);
 
     const rawData = (await response.json()) as EmojiVectorEntry[];
-    cachedEmojiEmbeddingMap = new Map(
+    const embeddingMap = new Map(
       rawData
         .filter((entry) => entry.codePoints && Array.isArray(entry.embedding))
         .map((entry) => [entry.codePoints, entry.embedding])
     );
-
-    return cachedEmojiEmbeddingMap;
+    cachedEmojiEmbeddingMaps.set(localeId, embeddingMap);
+    return embeddingMap;
   })();
 
+  cachedEmojiEmbeddingPromises.set(localeId, promise);
+
   try {
-    const embeddingMap = await cachedEmojiEmbeddingPromise;
+    const embeddingMap = await promise;
     return new Map(embeddingMap);
   } finally {
-    cachedEmojiEmbeddingPromise = null;
+    cachedEmojiEmbeddingPromises.delete(localeId);
   }
 }
 
