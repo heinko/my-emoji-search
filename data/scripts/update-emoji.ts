@@ -12,6 +12,8 @@ const MODEL_NAME = 'intfloat/multilingual-e5-small';
 
 const UNICODE_VERSION = '17.0.0';
 const EMOJI_TEST_URL = `https://www.unicode.org/Public/${UNICODE_VERSION}/emoji/emoji-test.txt`;
+const CLDR_EN_URL = 'https://raw.githubusercontent.com/unicode-org/cldr/main/common/annotations/en.xml';
+const CLDR_EN_DERIVED_URL = 'https://raw.githubusercontent.com/unicode-org/cldr/main/common/annotationsDerived/en.xml';
 const CLDR_MY_URL = 'https://raw.githubusercontent.com/unicode-org/cldr/main/common/annotations/my.xml';
 const CLDR_MY_DERIVED_URL = 'https://raw.githubusercontent.com/unicode-org/cldr/main/common/annotationsDerived/my.xml';
 
@@ -45,6 +47,7 @@ interface EmojiVectorEntry {
 
 interface LocalizedEmojiEntry extends EmojiEntry {
   contributorKeywords: string[];
+  englishKeywords: string[];
   myKeywords: string[];
   myName: string;
 }
@@ -55,6 +58,7 @@ interface EmojiLexicalEntry {
   displayName: string;
   emoji: string;
   enName: string;
+  englishKeywords?: string[];
   group: string;
   keywords: string[];
   myName: string;
@@ -271,9 +275,18 @@ async function main() {
   try {
     console.log(`Fetching Unicode ${UNICODE_VERSION} emoji list...`);
     const emojiText = await fetchText(EMOJI_TEST_URL);
+    console.log(`Fetching CLDR English annotations...`);
+    const cldrEnXml = await fetchText(CLDR_EN_URL);
     console.log(`Fetching CLDR Myanmar annotations...`);
     const cldrXml = await fetchText(CLDR_MY_URL);
+    let cldrEnDerivedXml = '';
     let cldrDerivedXml = '';
+    try {
+      console.log(`Fetching CLDR derived English annotations...`);
+      cldrEnDerivedXml = await fetchText(CLDR_EN_DERIVED_URL);
+    } catch (err) {
+      console.warn('Failed to fetch derived English annotations, proceeding without them.');
+    }
     try {
       console.log(`Fetching CLDR derived Myanmar annotations...`);
       cldrDerivedXml = await fetchText(CLDR_MY_DERIVED_URL);
@@ -282,23 +295,37 @@ async function main() {
     }
 
     const baseEmojis = await parseUnicodeEmojiTest(emojiText);
+    const englishAnnotations = await parseCLDRAnnotations(cldrEnXml);
+    let englishDerivedAnnotations: Record<string, LocalizedEntry> = {};
+    if (cldrEnDerivedXml) {
+      englishDerivedAnnotations = await parseCLDRAnnotations(cldrEnDerivedXml);
+    }
     const burmeseAnnotations = await parseCLDRAnnotations(cldrXml);
     let burmeseDerivedAnnotations: Record<string, LocalizedEntry> = {};
     if (cldrDerivedXml) {
        burmeseDerivedAnnotations = await parseCLDRAnnotations(cldrDerivedXml);
     }
-    
-    // Merge annotations
-    for (const [emoji, entry] of Object.entries(burmeseDerivedAnnotations)) {
-      if (!burmeseAnnotations[emoji]) {
-        burmeseAnnotations[emoji] = entry;
-      } else {
-        if (!burmeseAnnotations[emoji].name && entry.name) {
-          burmeseAnnotations[emoji].name = entry.name;
+
+    function mergeAnnotations(
+      target: Record<string, LocalizedEntry>,
+      source: Record<string, LocalizedEntry>
+    ) {
+      for (const [emoji, entry] of Object.entries(source)) {
+        if (!target[emoji]) {
+          target[emoji] = entry;
+        } else {
+          if (!target[emoji].name && entry.name) {
+            target[emoji].name = entry.name;
+          }
+          target[emoji].keywords = Array.from(
+            new Set([...target[emoji].keywords, ...entry.keywords])
+          );
         }
-        burmeseAnnotations[emoji].keywords = Array.from(new Set([...burmeseAnnotations[emoji].keywords, ...entry.keywords]));
       }
     }
+
+    mergeAnnotations(englishAnnotations, englishDerivedAnnotations);
+    mergeAnnotations(burmeseAnnotations, burmeseDerivedAnnotations);
 
     const extraKeywordsMy = parseExtraKeywordsCsv(EXTRA_KEYWORDS_CSV_PATH);
     const existingLexicalData = loadJsonIfExists<EmojiLexicalEntry[]>(
@@ -342,9 +369,17 @@ async function main() {
     const qualifiedEmojis = baseEmojis.filter(base => base.status === 'fully-qualified');
     writeContributorCatalogCsv(qualifiedEmojis);
     const localizedEmojis: LocalizedEmojiEntry[] = qualifiedEmojis.map((base) => {
+      const enLocalized = englishAnnotations[base.emoji] || { name: '', keywords: [] };
       const myLocalized = burmeseAnnotations[base.emoji] || { name: '', keywords: [] };
       const contributed = extraKeywordsMy[base.codePoints]?.keywords || [];
       const myName = myLocalized.name || base.name;
+      const englishKeywords = Array.from(
+        new Set(
+          enLocalized.keywords
+            .map((keyword) => keyword.trim())
+            .filter((keyword) => keyword && keyword.toLowerCase() !== base.name.toLowerCase())
+        )
+      );
       const myKeywords = Array.from(
         new Set([...myLocalized.keywords, ...contributed])
       );
@@ -352,6 +387,7 @@ async function main() {
       return {
         ...base,
         contributorKeywords: contributed,
+        englishKeywords,
         myKeywords,
         myName,
       };
@@ -374,6 +410,7 @@ async function main() {
         emoji: base.emoji,
         codePoints: base.codePoints,
         enName: base.name,
+        englishKeywords: base.englishKeywords,
         myName: base.myName,
         displayName: base.myName,
         keywords: base.myKeywords,

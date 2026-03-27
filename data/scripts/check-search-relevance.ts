@@ -61,7 +61,9 @@ function loadEmojiIndex(): EmojiItem[] {
       ...emoji,
       baseCodePoints: skinToneMetadata.baseCodePoints,
       enTokens: tokenizeEnglish(
-        [emoji.enName, emoji.group, emoji.subgroup].filter(Boolean).join(' ')
+        [emoji.enName, ...(emoji.englishKeywords ?? []), emoji.group, emoji.subgroup]
+          .filter(Boolean)
+          .join(' ')
       ),
       embedding: embeddingMap.get(emoji.codePoints),
       isSkinToneVariant: skinToneMetadata.isSkinToneVariant,
