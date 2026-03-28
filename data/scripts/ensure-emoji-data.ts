@@ -1,11 +1,13 @@
 import fs from 'fs';
 import path from 'path';
+import { SUPPORTED_LOCALES } from '../../lib/locale-config';
 
-const REQUIRED_FILES = [
-  'public/data/emoji/emoji-index-my.json',
-  'public/data/emoji/emoji-index-en.json',
-  'public/data/emoji/emoji-vectors-my.json',
-];
+const REQUIRED_FILES = SUPPORTED_LOCALES.flatMap((locale) => {
+  const lexicalFile = `public/data/emoji/emoji-index-${locale.id}.json`;
+  return locale.semanticEnabled
+    ? [lexicalFile, `public/data/emoji/emoji-vectors-${locale.id}.json`]
+    : [lexicalFile];
+});
 
 const missingFiles = REQUIRED_FILES.filter((filePath) => {
   const absolutePath = path.join(process.cwd(), filePath);

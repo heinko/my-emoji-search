@@ -1,79 +1,99 @@
 import Link from "next/link"
 import { ArrowUpRight } from "lucide-react"
 
-const creditSections = [
+type CreditItem = {
+  href?: string
+  name: string
+  note: string
+  citation?: string
+}
+
+const creditSections: Array<{ title: string; items: CreditItem[] }> = [
   {
-    title: "Project",
+    title: "Created By",
     items: [
       {
-        name: "Heinko",
-        note: "Creator and maintainer of Burmese Emoji Search. This project was also vibe coded with help from Codex and v0.",
+        name: "Heinko Lwin",
+        note: "Creator of Myanmar Emoji Search.",
       },
       {
-        name: "Codex",
-        note: "Used as the coding assistant during the vibe coding process for building and polishing the project.",
-      },
-      {
-        name: "v0",
-        note: "Used to help shape and iterate on the UI during the vibe coding process.",
+        name: "Source Code",
+        note: "Open-source repository on GitHub.",
+        href: "https://github.com/heinko/my-emoji-search",
       },
     ],
   },
   {
-    title: "Language And Search Inspiration",
+    title: "Built With",
+    items: [
+      {
+        name: "Codex & v0",
+        note: "Vibe coded with help from Codex and v0.",
+      },
+      {
+        name: "Next.js on Vercel",
+        note: "Web framework and hosting platform.",
+        href: "https://vercel.com/",
+      },
+    ],
+  },
+  {
+    title: "Research & NLP",
     items: [
       {
         name: "oppaWord",
-        note: "Inspired the Burmese word-segmentation direction used in the search experience.",
+        note: "Hybrid DAG + Bi-MM + LM Myanmar word segmenter by Ye Kyaw Thu. Inspired the Burmese word-segmentation used in the search.",
         href: "https://github.com/ye-kyaw-thu/oppaWord",
+        citation: "@misc{oppaWord_2025,\n  author       = {Ye Kyaw Thu},\n  title        = {{oppaWord: Hybrid DAG+Bi-MM+LM Myanmar Word Segmenter}},\n  version      = {1.0},\n  month        = {August},\n  year         = {2025},\n  publisher    = {GitHub},\n  url          = {https://github.com/ye-kyaw-thu/oppaWord},\n  institution  = {Language Understanding Lab (LU Lab), Myanmar}\n}",
       },
       {
         name: "sylbreak",
-        note: "Reviewed during the project’s Burmese text experimentation and segmentation work.",
+        note: "Syllable segmentation tool for Myanmar language by Ye Kyaw Thu. Used as the base syllable layer for search normalization.",
         href: "https://github.com/ye-kyaw-thu/sylbreak",
+        citation: "@misc{sylbreak,\n  author       = {Ye Kyaw Thu},\n  title        = {{sylbreak: A syllable segmentation tool for Myanmar language}},\n  publisher    = {GitHub},\n  url          = {https://github.com/ye-kyaw-thu/sylbreak}\n}",
+      },
+      {
+        name: "intfloat/multilingual-e5-small",
+        note: "Multilingual sentence embedding model used for semantic search.",
+        href: "https://huggingface.co/intfloat/multilingual-e5-small",
       },
     ],
   },
   {
-    title: "Emoji And Language Data",
+    title: "Language Data",
     items: [
       {
         name: "Unicode Emoji Data",
-        note: "Provides the official emoji definitions and code points.",
+        note: "Official emoji definitions and code points.",
         href: "https://unicode.org/Public/emoji/",
       },
       {
-        name: "CLDR Myanmar Annotations",
-        note: "Provides Burmese emoji names and annotation data.",
+        name: "Myanmar Contributors to CLDR",
+        note: "Burmese emoji name and keyword annotations.",
         href: "https://github.com/unicode-org/cldr",
+      },
+      {
+        name: "Shan Institute of Information Technology (SIIT)",
+        note: "Shan emoji annotations. The latest shn-cldr is obtained from the Unicode CLDR repository.",
+        href: "https://github.com/SIIT-ORG/shn-cldr",
       },
     ],
   },
   {
-    title: "Model And Hosting",
+    title: "Infrastructure",
     items: [
       {
-        name: "intfloat/multilingual-e5-small",
-        note: "Used for multilingual semantic embedding generation.",
-        href: "https://huggingface.co/intfloat/multilingual-e5-small",
-      },
-      {
         name: "Hugging Face Spaces",
-        note: "Used to host the embedding service for semantic search.",
+        note: "Hosts the embedding service for semantic search.",
         href: "https://huggingface.co/spaces",
-      },
-      {
-        name: "Vercel",
-        note: "Used to host the web app.",
-        href: "https://vercel.com/",
       },
     ],
   },
 ]
 
 export const metadata = {
-  title: "Credits | Burmese Emoji Search",
-  description: "Credits, sources, datasets, and tools used to build Burmese Emoji Search.",
+  title: "Credits | Myanmar Emoji Search",
+  description: "Credits, sources, datasets, and tools used to build Myanmar Emoji Search.",
 }
 
 export default function CreditsPage() {
@@ -103,15 +123,11 @@ export default function CreditsPage() {
 
           <div className="space-y-4">
             <h1 className="text-3xl font-semibold tracking-tight md:text-5xl">
-              Credits, sources, and tools behind Burmese Emoji Search
+              Credits, sources, and tools behind Myanmar Emoji Search
             </h1>
             <p className="text-base leading-8 text-muted-foreground md:text-lg">
               This project is built with public language resources, Unicode emoji data, open-source
               tools, and hosting services. This page gives clear credit to those sources.
-            </p>
-            <p className="text-base leading-8 text-muted-foreground md:text-lg">
-              It was also vibe coded with Codex for coding help and v0 for the UI side of the
-              process.
             </p>
           </div>
         </section>
@@ -142,6 +158,16 @@ export default function CreditsPage() {
                       )}
                     </div>
                     <p className="text-sm leading-7 text-muted-foreground">{item.note}</p>
+                    {item.citation && (
+                      <details className="mt-3">
+                        <summary className="cursor-pointer text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
+                          Citation
+                        </summary>
+                        <pre className="mt-2 overflow-x-auto rounded-lg border border-border bg-background/80 p-3 text-xs leading-5 text-muted-foreground">
+                          <code>{item.citation}</code>
+                        </pre>
+                      </details>
+                    )}
                   </article>
                 ))}
               </div>

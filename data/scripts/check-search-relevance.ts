@@ -4,6 +4,7 @@ import cases from '../relevance/burmese-search-cases.json';
 import { buildBurmeseSearchMetadata, buildEmojiSearchLexicon } from '../../lib/burmese-search';
 import type { EmojiItem } from '../../lib/emoji-data';
 import { getSkinToneMetadata } from '../../lib/emoji-skin-tone';
+import { getLocaleConfig } from '../../lib/locale-config';
 import {
   analyzeSearchQuery,
   buildSearchLexiconFromEmojiData,
@@ -18,6 +19,7 @@ const DEFAULT_EMBEDDING_SERVICE_URL =
 
 type RelevanceCase = {
   expectedTop10: string[];
+  localeId?: string;
   minimumHits: number;
   mustExcludeTop10?: string[];
   query: string;
@@ -40,40 +42,53 @@ async function fetchEmbedding(text: string): Promise<number[]> {
   return data.vector;
 }
 
-function loadEmojiIndex(): EmojiItem[] {
-  const indexFilePath = path.join(process.cwd(), 'public/data/emoji/emoji-index-my.json');
-  const vectorFilePath = path.join(process.cwd(), 'public/data/emoji/emoji-vectors-my.json');
+function loadEmojiIndex(localeId: string): EmojiItem[] {
+  const locale = getLocaleConfig(localeId);
+  const indexFilePath = path.join(process.cwd(), `public/data/emoji/emoji-index-${localeId}.json`);
   const rawData = JSON.parse(fs.readFileSync(indexFilePath, 'utf-8')) as EmojiItem[];
-  const rawVectors = JSON.parse(
-    fs.readFileSync(vectorFilePath, 'utf-8')
-  ) as Array<{ codePoints: string; embedding: number[] }>;
+
+  const rawVectors = locale.semanticEnabled
+    ? (JSON.parse(
+        fs.readFileSync(path.join(process.cwd(), `public/data/emoji/emoji-vectors-${localeId}.json`), 'utf-8')
+      ) as Array<{ codePoints: string; embedding: number[] }>)
+    : [];
   const embeddingMap = new Map(rawVectors.map((entry) => [entry.codePoints, entry.embedding]));
-  const lexicon = buildEmojiSearchLexicon(rawData);
+  const lexicon =
+    locale.searchStrategy === 'burmese' ? buildEmojiSearchLexicon(rawData) : buildSearchLexiconFromEmojiData(rawData);
 
   const enriched = rawData.map((emoji) => {
     const metadata =
-      emoji.wordTokens?.length
-        ? { wordTokens: emoji.wordTokens }
-        : buildBurmeseSearchMetadata(emoji.myName ?? '', emoji.keywords ?? [], lexicon);
+      locale.searchStrategy === 'burmese' && !emoji.wordTokens?.length
+        ? buildBurmeseSearchMetadata(emoji.localizedName ?? '', emoji.localizedKeywords ?? [], lexicon)
+        : { wordTokens: emoji.wordTokens ?? [] };
     const skinToneMetadata = getSkinToneMetadata(emoji.codePoints);
 
     return {
       ...emoji,
       baseCodePoints: skinToneMetadata.baseCodePoints,
+      displayName: emoji.localizedName || emoji.enName,
+      embedding: embeddingMap.get(emoji.codePoints),
       enTokens: tokenizeEnglish(
         [emoji.enName, ...(emoji.englishKeywords ?? []), emoji.group, emoji.subgroup]
           .filter(Boolean)
           .join(' ')
       ),
-      embedding: embeddingMap.get(emoji.codePoints),
       isSkinToneVariant: skinToneMetadata.isSkinToneVariant,
-      skinTone: skinToneMetadata.skinTone,
-      syllables: Array.from(
-        new Set([
-          ...sylbreak((emoji.myName ?? '').toLowerCase()),
-          ...((emoji.keywords ?? []).flatMap((keyword) => sylbreak(keyword.toLowerCase()))),
-        ])
+      localizedTokens: tokenizeEnglish(
+        [emoji.localizedName, ...(emoji.localizedKeywords ?? []), ...(emoji.contributorKeywords ?? [])]
+          .filter(Boolean)
+          .join(' ')
       ),
+      skinTone: skinToneMetadata.skinTone,
+      syllables:
+        locale.searchStrategy === 'burmese'
+          ? Array.from(
+              new Set([
+                ...sylbreak((emoji.localizedName ?? '').toLowerCase()),
+                ...(emoji.localizedKeywords ?? []).flatMap((keyword) => sylbreak(keyword.toLowerCase())),
+              ])
+            )
+          : [],
       wordTokens: metadata.wordTokens,
     };
   });
@@ -94,19 +109,26 @@ function loadEmojiIndex(): EmojiItem[] {
 }
 
 async function main() {
-  const emojis = loadEmojiIndex();
-  const lexicon = buildSearchLexiconFromEmojiData(emojis);
-
   let passCount = 0;
+
   for (const relevanceCase of cases as RelevanceCase[]) {
-    const analysis = analyzeSearchQuery(relevanceCase.query, lexicon);
-    const embeddings = await Promise.all(
-      analysis.semanticViews.map(async (view) => ({
-        ...view,
-        vector: await fetchEmbedding(view.text),
-      }))
-    );
-    const semanticSignal = buildSemanticSignal(emojis, embeddings);
+    const localeId = relevanceCase.localeId ?? 'my';
+    const locale = getLocaleConfig(localeId);
+    const emojis = loadEmojiIndex(localeId);
+    const lexicon = buildSearchLexiconFromEmojiData(emojis);
+    const analysis = analyzeSearchQuery(relevanceCase.query, lexicon, locale.searchStrategy);
+
+    let semanticSignal;
+    if (locale.semanticEnabled) {
+      const embeddings = await Promise.all(
+        analysis.semanticViews.map(async (view) => ({
+          ...view,
+          vector: await fetchEmbedding(view.text),
+        }))
+      );
+      semanticSignal = buildSemanticSignal(emojis, embeddings);
+    }
+
     const top10 = rankEmojiResults(emojis, relevanceCase.query, analysis, semanticSignal).slice(0, 10);
     const top10Emojis = top10.map((emoji) => emoji.emoji);
 
@@ -119,7 +141,7 @@ async function main() {
     }
 
     console.log(
-      `${passed ? 'PASS' : 'FAIL'}  ${relevanceCase.query}  hits=${hits.length}/${relevanceCase.minimumHits}  top10=${top10Emojis.join(' ')}`
+      `${passed ? 'PASS' : 'FAIL'}  [${localeId}] ${relevanceCase.query}  hits=${hits.length}/${relevanceCase.minimumHits}  top10=${top10Emojis.join(' ')}`
     );
 
     if (excludes.length > 0) {
