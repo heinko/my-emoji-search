@@ -1,5 +1,7 @@
 # Myanmar Emoji Search Scoring
 
+> 📖 [မြန်မာဘာသာဖြင့် ဖတ်ရန်](./search-scoring-my.md)
+
 This document reflects the current ranking implementation in [lib/search-ranking.ts](/Users/heink/v0-burmese-emoji-search-su/lib/search-ranking.ts).
 
 ## Summary

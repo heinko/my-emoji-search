@@ -33,47 +33,64 @@ export default function AboutPage() {
 
           <div className="space-y-5">
             <h1 className="text-3xl font-semibold tracking-tight md:text-5xl">
-              How this emoji search works
+              From research to product
             </h1>
 
             <p className="text-base leading-8 text-muted-foreground md:text-lg">
-              Myanmar Emoji Search is a small search tool for finding emojis with Burmese, supported
-              Myanmar-region languages, or English words, short phrases, and everyday ideas.
+              My background is in software engineering, not academic research. But I have
+              always wanted to take the work that researchers have done for Burmese NLP —
+              especially{" "}
+              <strong>Sayar Ye Kyaw Thu</strong> and his team — and apply it to practical,
+              everyday products.
             </p>
 
             <p className="text-base leading-8 text-muted-foreground md:text-lg">
-              The main idea is simple: people should not need to know the exact official English
-              emoji name just to find the right icon. You can search more naturally and let the app
-              do the matching work.
+              This project is a showcase of exactly that. With emerging advancements in
+              generative AI, it takes far less time to start building on what researchers
+              have published. <b>The gap between a research paper and a working product
+                is smaller than ever.</b>
             </p>
 
             <p className="text-base leading-8 text-muted-foreground md:text-lg">
-              This is also a fun personal project by me, heinko, built to explore Burmese-localized
-              search in a playful and useful way.
+              That is also why I intentionally ask the AI to generate detailed documentation — covering the
+              architecture, how scoring works, and how Burmese segmentation fits in. You
+              can read it in the{" "}
+              <a
+                href="https://github.com/heinko/my-emoji-search/tree/main/docs"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-4 transition-colors hover:text-foreground"
+              >
+                docs folder
+              </a>{" "}
+              of the repo for a deeper look at how everything works under the hood.
             </p>
 
             <p className="text-base leading-8 text-muted-foreground md:text-lg">
-              It was very much vibe coded too, with Codex helping me turn the idea into a working
-              little product and v0 helping shape the UI.
+              Community contributions gave us the emoji dataset annotations. NLP
+              researchers gave us the segmentation tools that make Burmese text searchable.
+              And generative AI made it possible for me to connect all of these pieces
+              into one working tool in a short amount of time.
             </p>
           </div>
         </section>
 
         <section className="grid gap-5 md:grid-cols-3">
           <article className="rounded-[1.75rem] border border-border bg-card/70 p-6">
-            <h2 className="mb-3 text-lg font-semibold">Default search</h2>
+            <h2 className="mb-3 text-lg font-semibold">Lexical search</h2>
             <p className="text-sm leading-7 text-muted-foreground">
-              By default, the app ranks emojis with a lexical search that compares your query with
-              locale-specific emoji names, locale keywords, English tokens, categories, and segmented
-              Burmese terms when Burmese is selected.
+              By default, the app uses lexical search — matching your query against emoji names,
+              keywords, categories, and segmented Burmese terms. English keywords are always
+              available as a fallback in every locale.
             </p>
           </article>
 
           <article className="rounded-[1.75rem] border border-border bg-card/70 p-6">
             <h2 className="mb-3 text-lg font-semibold">Semantic mode</h2>
             <p className="text-sm leading-7 text-muted-foreground">
-              There is also an optional semantic mode that uses multilingual embeddings to match by
-              meaning, which helps when Burmese and English ideas do not line up as exact keywords.
+              An optional semantic mode uses multilingual embeddings to match by meaning.
+              This helps when the word you typed is not an exact keyword but still
+              describes what you are looking for.
             </p>
           </article>
 
@@ -90,25 +107,30 @@ export default function AboutPage() {
           <h2 className="mb-4 text-2xl font-semibold">How the data was built</h2>
           <div className="space-y-4 text-base leading-8 text-muted-foreground">
             <p>
-              The emoji list starts from the official Unicode emoji data, then adds locale-specific
-              names and keyword annotations from CLDR locale files for each supported language.
+              The emoji list starts from the official Unicode emoji data, then adds
+              locale-specific names and keyword annotations from CLDR files for each
+              supported language.
             </p>
             <p>
-              On top of that, I added extra curated keywords for supported locales so the search can
-              better reflect how people actually describe feelings, objects, and situations in daily use.
+              On top of that, I added extra curated keywords so the search better reflects
+              how people actually describe feelings, objects, and situations in daily life.
+              These extra keywords were generated with Gemini through the{" "}
+              <code className="rounded bg-background/80 px-1.5 py-0.5 text-sm">=AI()</code>{" "}
+              function in Google Sheets.
             </p>
             <p>
-              During the build step, the project generates one search index per supported locale,
-              keeps English keywords available across locales, and prepares semantic vectors for the
-              locales that currently support meaning-based search.
+              During the build step, the project generates one search index per locale,
+              keeps English keywords available across all locales, and prepares semantic
+              vectors for locales that support meaning-based search.
             </p>
             <p>
-              So the overview is: official emoji source data, localized labels, extra hand-curated
-              keywords, then a locale-aware search index tuned to make emoji lookup feel easier.
+              In short: official emoji data → localized labels → AI-curated keywords →
+              a locale-aware search index tuned to make emoji lookup feel natural.
             </p>
             <p>
-              For the underlying tools, models, and data sources behind this project, visit the
-              Credits page.
+              For the full list of tools, models, and data sources, visit the{" "}
+              <Link href="/credits" className="underline underline-offset-4 transition-colors hover:text-foreground">Credits</Link>{" "}
+              page.
             </p>
           </div>
         </section>

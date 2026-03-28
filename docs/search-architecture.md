@@ -1,5 +1,7 @@
 # Myanmar Emoji Search Architecture
 
+> 📖 [မြန်မာဘာသာဖြင့် ဖတ်ရန်](./search-architecture-my.md)
+
 This document explains how the project prepares locale-aware emoji data, generates embeddings, and executes search at runtime.
 
 ## High-Level Design

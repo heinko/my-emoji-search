@@ -23,7 +23,7 @@ Current search behavior:
 - Shan and English use the generic locale path
 - semantic search is currently enabled for Burmese only
 
-For a deeper system walkthrough, see [search_architecture.md](./search_architecture.md). For ranking details and weights, see [search_scoring.md](./search_scoring.md).
+For detailed technical documentation, see the [docs/](./docs/) folder covering [search architecture](./docs/search-architecture.md), [search scoring](./docs/search-scoring.md), and [Burmese segmentation](./docs/burmese-segmentation-review.md).
 
 ## Features
 
