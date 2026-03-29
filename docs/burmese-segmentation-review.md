@@ -8,13 +8,13 @@ This project now uses a simpler Burmese search analysis stack:
 - a local Burmese search lexicon built from emoji data
 - concept recovery from lexicon-backed syllable spans
 
-It no longer ships a local query-time Burmese word segmenter.
+It no longer ships a local query-time Burmese word segmenter. Burmese-specific analysis remains one part of a broader locale-aware search system whose supported locales and semantic availability are defined in [lib/locale-config.ts](../lib/locale-config.ts).
 
 ## What We Keep
 
-- [lib/sylbreak.ts](/Users/heink/v0-burmese-emoji-search-su/lib/sylbreak.ts) remains the base Myanmar syllable splitter
-- [lib/burmese-lexicon.ts](/Users/heink/v0-burmese-emoji-search-su/lib/burmese-lexicon.ts) builds and scores the in-app search lexicon
-- [lib/burmese-search.ts](/Users/heink/v0-burmese-emoji-search-su/lib/burmese-search.ts) recovers search concepts from syllables
+- [lib/sylbreak.ts](../lib/sylbreak.ts) remains the base Myanmar syllable splitter
+- [lib/burmese-lexicon.ts](../lib/burmese-lexicon.ts) builds and scores the in-app search lexicon
+- [lib/burmese-search.ts](../lib/burmese-search.ts) recovers search concepts from syllables
 
 ## Current Model
 

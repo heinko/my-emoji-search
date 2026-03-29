@@ -2,16 +2,16 @@
 
 > 📖 [Read in English](./search-scoring.md)
 
-ဒီစာရွက်စာတမ်းက [lib/search-ranking.ts](/Users/heink/v0-burmese-emoji-search-su/lib/search-ranking.ts) ထဲက လက်ရှိ ranking behavior ကို ဖော်ပြထားပါတယ်။
+ဒီစာရွက်စာတမ်းက [lib/search-ranking.ts](../lib/search-ranking.ts) ထဲက လက်ရှိ ranking behavior ကို ဖော်ပြထားပါတယ်။
 
 ## Summary
 
 အခု search stack က concept-oriented ဖြစ်ပါတယ်:
 
 - lexical scoring က browser ထဲမှာ အမြဲ run တယ်
-- semantic scoring က optional ဖြစ်ပြီး လောလောဆယ် Burmese-only
+- semantic scoring က optional ဖြစ်ပြီး locale config မှာ ဖွင့်ထားတဲ့ locale တွေအတွက်ပဲ ရနိုင်တယ်
 - Burmese query analysis က `sylbreak` + lexicon-backed concept recovery ကို သုံးတယ်
-- semantic search က raw query နဲ့ recovered concept view တွေကို embed လုပ်တယ်
+- semantic search က semantic-enabled locale တွေအတွက် weighted query view တွေကို embed လုပ်တယ်
 
 ## ၁။ Query Analysis
 
@@ -75,7 +75,7 @@ Burmese scoring က:
 
 ## ၄။ Semantic Scoring
 
-Semantic scoring ကို semantic mode ဖွင့်ထားမှ run ပါတယ်။
+Semantic scoring ကို semantic mode ဖွင့်ထားပြီး selected locale က semantic vector support ရှိမှ run ပါတယ်။
 
 Burmese အတွက်:
 
@@ -85,6 +85,8 @@ Burmese အတွက်:
 4. semantic boost အဖြစ် ပြောင်းတယ်
 
 အခု Burmese semantic search က concept view တွေပါ embed လုပ်တဲ့အတွက် query အရှည်တွေမှာ ပိုအသုံးဝင်လာပါတယ်။
+
+English အတွက်လည်း semantic boost pipeline ကို သုံးနိုင်ပေမယ့် Burmese concept-recovery path မဟုတ်ဘဲ generic query-analysis path ပေါ်မှာ run ပါတယ်။
 
 ## ၅။ Final Ranking
 

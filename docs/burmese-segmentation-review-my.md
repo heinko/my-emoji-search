@@ -8,13 +8,13 @@
 - emoji data ကနေ local Burmese search lexicon တည်ဆောက်တယ်
 - lexicon-backed syllable span တွေကနေ concept phrase ပြန်ဖော်တယ်
 
-အရင်လို local query-time Burmese word segmenter ကို မသုံးတော့ပါ။
+အရင်လို local query-time Burmese word segmenter ကို မသုံးတော့ပါ။ Burmese-specific analysis က broader locale-aware search system တစ်ခုထဲက အပိုင်းတစ်ခုဖြစ်ပြီး supported locale နဲ့ semantic availability ကို [lib/locale-config.ts](../lib/locale-config.ts) မှာ သတ်မှတ်ထားပါတယ်။
 
 ## အခု ဘာတွေကို ဆက်ထားလဲ
 
-- [lib/sylbreak.ts](/Users/heink/v0-burmese-emoji-search-su/lib/sylbreak.ts) က base Myanmar syllable splitter
-- [lib/burmese-lexicon.ts](/Users/heink/v0-burmese-emoji-search-su/lib/burmese-lexicon.ts) က in-app search lexicon တည်ဆောက်ပေးတယ်
-- [lib/burmese-search.ts](/Users/heink/v0-burmese-emoji-search-su/lib/burmese-search.ts) က syllable တွေကနေ search concept ပြန်ဖော်တယ်
+- [lib/sylbreak.ts](../lib/sylbreak.ts) က base Myanmar syllable splitter
+- [lib/burmese-lexicon.ts](../lib/burmese-lexicon.ts) က in-app search lexicon တည်ဆောက်ပေးတယ်
+- [lib/burmese-search.ts](../lib/burmese-search.ts) က syllable တွေကနေ search concept ပြန်ဖော်တယ်
 
 ## လက်ရှိ model
 

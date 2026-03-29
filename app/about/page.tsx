@@ -33,12 +33,14 @@ export default function AboutPage() {
 
           <div className="space-y-4">
             <h1 className="text-3xl font-semibold tracking-tight md:text-5xl">
-              A Burmese-first emoji search engine
+              A localized emoji search engine
             </h1>
             <p className="text-base leading-8 text-muted-foreground md:text-lg">
-              Myanmar Emoji Search helps people find emojis using Burmese, Shan, and English.
-              It combines localized emoji data, Burmese syllable analysis, and optional
-              semantic search so queries can match both exact keywords and broader meaning.
+              Myanmar Emoji Search helps people find emojis using localized languages.
+              It currently supports Burmese, Shan, and English, with more local languages
+              planned only when dependable emoji annotations are available. The app combines
+              locale-aware emoji data, Burmese syllable analysis, and optional semantic
+              search so queries can match both exact keywords and broader meaning.
             </p>
           </div>
         </section>
@@ -66,7 +68,8 @@ export default function AboutPage() {
             <p className="text-sm leading-7 text-muted-foreground">
               In Burmese semantic mode, the app embeds the query and recovered concept views,
               compares them with prebuilt emoji vectors, and boosts results by meaning instead
-              of exact wording alone.
+              of exact wording alone. English also supports semantic mode through the generic
+              search path, while Shan currently stays lexical-only.
             </p>
           </article>
         </section>
@@ -81,8 +84,8 @@ export default function AboutPage() {
             </p>
             <p>
               During the build step, the project generates one locale-aware search index per
-              language and prepares semantic vectors for locales that support meaning-based
-              search.
+              language and prepares semantic vectors only for locales that currently support
+              meaning-based search.
             </p>
             <p>
               The result is a lightweight search app: most ranking happens locally in the

@@ -11,14 +11,14 @@ This document describes the current search architecture after removing the older
 
 ## High-Level Design
 
-The system still has two paths:
+The system has two paths:
 
 - Offline preparation: build locale-specific emoji data and optional embeddings
 - Runtime search: rank locally in the browser and add semantic boosts when enabled
 
 ## 1. Offline Data Preparation
 
-The build script in [data/scripts/update-emoji.ts](/Users/heink/v0-burmese-emoji-search-su/data/scripts/update-emoji.ts) generates one dataset per locale.
+The build script in [data/scripts/update-emoji.ts](../data/scripts/update-emoji.ts) generates one dataset per locale.
 
 ### Inputs
 
@@ -27,16 +27,16 @@ The build script in [data/scripts/update-emoji.ts](/Users/heink/v0-burmese-emoji
 - CLDR locale annotations
 - per-locale contributor keyword CSV files
 
-### Burmese-specific indexing
+### Locale-specific indexing
 
-For Burmese, the build step creates a search lexicon from:
+For each supported locale, the build step emits a lexical runtime index. For Burmese, it also creates a search lexicon from:
 
 - localized emoji names
 - localized keywords
 - contributor keywords
 - existing `wordTokens`
 
-Then [buildBurmeseSearchMetadata()](/Users/heink/v0-burmese-emoji-search-su/lib/burmese-search.ts) produces `wordTokens` using:
+Then [buildBurmeseSearchMetadata()](../lib/burmese-search.ts) produces `wordTokens` using:
 
 1. normalized Burmese text
 2. compact Myanmar text
@@ -45,14 +45,24 @@ Then [buildBurmeseSearchMetadata()](/Users/heink/v0-burmese-emoji-search-su/lib/
 
 This means the indexed Burmese tokens are concept-oriented search tokens, not outputs of a general-purpose Burmese word segmenter.
 
+Semantic vector files are generated only for locales whose `semanticEnabled` flag is `true` in [lib/locale-config.ts](../lib/locale-config.ts). In the current repo state, that means Burmese (`my`) and English (`en`), while Shan (`shn`) stays lexical-only.
+
 ## 2. Runtime Search
 
 The runtime path lives mainly in:
 
-- [hooks/use-semantic-search.ts](/Users/heink/v0-burmese-emoji-search-su/hooks/use-semantic-search.ts)
-- [lib/burmese-search.ts](/Users/heink/v0-burmese-emoji-search-su/lib/burmese-search.ts)
-- [lib/burmese-lexicon.ts](/Users/heink/v0-burmese-emoji-search-su/lib/burmese-lexicon.ts)
-- [lib/search-ranking.ts](/Users/heink/v0-burmese-emoji-search-su/lib/search-ranking.ts)
+- [hooks/use-semantic-search.ts](../hooks/use-semantic-search.ts)
+- [lib/burmese-search.ts](../lib/burmese-search.ts)
+- [lib/burmese-lexicon.ts](../lib/burmese-lexicon.ts)
+- [lib/search-ranking.ts](../lib/search-ranking.ts)
+- [lib/emoji-data.ts](../lib/emoji-data.ts)
+- [app/api/embed/route.ts](../app/api/embed/route.ts)
+
+The client always loads the lexical dataset for the selected locale. Semantic assets are only loaded when:
+
+1. the selected locale has `semanticEnabled: true`
+2. the user turns on semantic mode
+3. the matching `emoji-vectors-<locale>.json` file is fetched and merged into the in-memory emoji list
 
 ### Burmese query analysis
 
@@ -94,7 +104,7 @@ English and Shan still use the generic lexical path with localized fields, Engli
 
 ## 4. Semantic Search
 
-Semantic search currently runs only for Burmese.
+Semantic search is controlled by locale configuration plus the UI toggle.
 
 When enabled:
 
@@ -102,7 +112,9 @@ When enabled:
 2. the browser compares those vectors against precomputed emoji embeddings
 3. the strongest weighted semantic signal boosts lexical evidence
 
-This is why recovered concept phrases matter. A longer Burmese query often needs concept-level views like `သဲကန္တာရ` or `ကားမောင်း`, not just one raw sentence embedding.
+For Burmese, recovered concept phrases matter because a longer query often needs concept-level views like `သဲကန္တာရ` or `ကားမောင်း`, not just one raw sentence embedding.
+
+For generic locales such as English, the semantic input is simpler: the normalized query becomes the main semantic view, and the same vector-comparison path still applies.
 
 ## 5. Why This Simpler Design
 
