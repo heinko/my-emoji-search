@@ -51,7 +51,7 @@ export const SUPPORTED_LOCALES: LocaleConfig[] = [
     placeholder: 'Example - happy',
     examples: ['heart', 'doctor', 'cat', 'party'],
     searchStrategy: 'generic',
-    semanticEnabled: false,
+    semanticEnabled: true,
   },
 ];
 
