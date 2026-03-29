@@ -5,7 +5,7 @@ colorFrom: yellow
 colorTo: green
 sdk: docker
 app_port: 7860
-short_description: Embedding API for Burmese emoji semantic search
+short_description: Embedding API for semantic-enabled locale emoji search
 models:
   - intfloat/multilingual-e5-small
 ---
@@ -13,7 +13,8 @@ models:
 # Hugging Face Space Embed Service
 
 This folder is a Docker-based Hugging Face Space that serves the same
-`intfloat/multilingual-e5-small` embedding model used by the app.
+`intfloat/multilingual-e5-small` embedding model used by the app for
+semantic-enabled locales.
 
 ## Endpoints
 

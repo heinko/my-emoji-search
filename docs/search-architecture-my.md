@@ -1,282 +1,122 @@
-# မြန်မာ Emoji ရှာဖွေရေး Architecture
+# Myanmar Emoji Search Architecture
 
 > 📖 [Read in English](./search-architecture.md)
 
-ဒီစာရွက်စာတမ်းက project မှာ locale-aware emoji data ဘယ်လိုပြင်ဆင်ထားတယ်၊ embeddings ဘယ်လိုဖန်တီးတယ်၊ runtime မှာ ရှာဖွေရေးကို ဘယ်လို လုပ်ဆောင်တယ်ဆိုတာ ရှင်းပြထားပါတယ်။
+ဒီစာရွက်စာတမ်းက လက်ရှိ search architecture ကို ဖော်ပြထားပါတယ်။ အဟောင်း query-time word segmenter ကို ဖယ်ရှားပြီးနောက် Burmese search က အခုဆိုရင် ဒီလမ်းကြောင်းနဲ့ အလုပ်လုပ်ပါတယ်:
 
-## အဆင့်မြင့် ဒီဇိုင်း
+- `sylbreak` နဲ့ syllable ခွဲတယ်
+- emoji name/keyword တွေကနေ Burmese search lexicon တည်ဆောက်တယ်
+- lexicon ထဲမှာ ရှိတဲ့ syllable span တွေကနေ concept phrase ပြန်ဖော်တယ်
+- raw query နဲ့ recovered concept တွေကို semantic search အတွက် သုံးတယ်
 
-System က လမ်းကြောင်း ၂ ခု ခွဲထားပါတယ်:
+## ၁။ Offline Data Build
 
-- **Offline ပြင်ဆင်ခြင်း**: locale တစ်ခုချင်းအတွက် emoji dataset တည်ဆောက်ပြီး ဖွင့်ထားတဲ့ locale တွေအတွက် embeddings ကြိုတင်တွက်ချက်ခြင်း
-- **Runtime ရှာဖွေရေး**: ရွေးထားတဲ့ locale dataset ကို browser ထဲ load လုပ်ပြီး locally rank ပေးခြင်း၊ semantic signal တွေ ထည့်သွင်းခြင်း (optional)
+[data/scripts/update-emoji.ts](../data/scripts/update-emoji.ts) က locale တစ်ခုစီအတွက် runtime dataset ထုတ်ပေးပါတယ်။
 
-```mermaid
-flowchart LR
-    subgraph Offline["Offline data build"]
-        U["Unicode 17 emoji list"]
-        E["CLDR English annotations"]
-        L["CLDR locale annotations"]
-        O["Locale CSV overrides"]
-        P["update-emoji.ts"]
-        I["emoji-index-<locale>.json"]
-        V["emoji-vectors-<locale>.json"]
-        U --> P
-        E --> P
-        L --> P
-        O --> P
-        P --> I
-        P --> V
-    end
+### Burmese indexing
 
-    subgraph Runtime["Runtime ရှာဖွေရေး"]
-        B["Browser client"]
-        R["Local ranking"]
-        A["Vercel /api/embed"]
-        H["HF Space"]
-        B --> R
-        B --> A
-        A --> H
-        H --> B
-    end
+Burmese အတွက် dataset build လုပ်တဲ့အခါ:
 
-    I --> B
-    V --> B
-```
+- localized name
+- localized keyword
+- contributor keyword
+- ရှိပြီးသား `wordTokens`
 
-## ၁. Data ပြင်ဆင်ခြင်း
+တွေကနေ search lexicon တည်ဆောက်ပါတယ်။
 
-[data/scripts/update-emoji.ts](../data/scripts/update-emoji.ts) build script က locale တစ်ခုချင်းအတွက် runtime dataset တစ်ခု ဖန်တီးပါတယ်။
+ပြီးရင် [buildBurmeseSearchMetadata()](../lib/burmese-search.ts) က `wordTokens` ကို ဒီလိုထုတ်ပါတယ်:
 
-### Input များ
+1. text normalize
+2. compact Myanmar text
+3. `sylbreak` နဲ့ syllable ခွဲ
+4. lexicon-backed syllable span တွေကနေ concept phrase ပြန်ဖော်
 
-- Unicode emoji တရားဝင် သတ်မှတ်ချက်များ
-- CLDR English annotation data
-- Support ပေးထားတဲ့ locale တွေအတွက် CLDR locale-specific annotation data
-- Locale-specific contributor keyword files (ဥပမာ: [data/locales/my-extra-keywords.csv](../data/locales/my-extra-keywords.csv))
+ဒါကြောင့် index ထဲက Burmese token တွေဟာ general-purpose word segmentation result မဟုတ်ဘဲ search အတွက် အသုံးဝင်မယ့် concept token တွေပါ။
 
-### လက်ရှိ Support ပေးထားတဲ့ Locale များ
+## ၂။ Runtime Search
 
-| Locale | Code | ရှာဖွေရေးနည်းလမ်း |
-|---|---|---|
-| မြန်မာ | `my` | Burmese-specific lexical + semantic |
-| ရှမ်း | `shn` | Generic lexical |
-| English | `en` | Generic lexical |
+Runtime logic အဓိကနေရာတွေက:
 
-### Build Flow
+- [hooks/use-semantic-search.ts](../hooks/use-semantic-search.ts)
+- [lib/burmese-search.ts](../lib/burmese-search.ts)
+- [lib/burmese-lexicon.ts](../lib/burmese-lexicon.ts)
+- [lib/search-ranking.ts](../lib/search-ranking.ts)
 
-1. Unicode emoji metadata ယူပြီး fully-qualified emoji entry တွေကို ထိန်းထားပါတယ်
-2. CLDR English annotations ယူပြီး derived annotations တွေ merge လုပ်ပါတယ်
-3. Support ပေးထားတဲ့ locale တစ်ခုချင်းအတွက် CLDR annotations ယူပြီး merge လုပ်ပါတယ်
-4. `data/locales/<locale>-extra-keywords.csv` ကနေ locale-specific contributor keywords merge လုပ်ပါတယ်
-5. Locale တစ်ခုချင်းအတွက် lexical dataset တည်ဆောက်ပါတယ်:
-   - English name, group, subgroup
-   - English CLDR keywords
-   - ဒေသခံ name နဲ့ keywords
-   - ဒေသခံ contributor keywords
-6. မြန်မာအတွက်သာ oppaWord-inspired lexicon တည်ဆောက်ပြီး `wordTokens` ဖန်တီးပါတယ်
-7. Semantic mode ဖွင့်ထားတဲ့ locale တွေအတွက်သာ embeddings တည်ဆောက်ပါတယ်
-8. Embedding input hash မပြောင်းရင် ရှိပြီးသား embeddings ပြန်သုံးပါတယ်
-9. `emoji-index-<locale>.json`, `emoji-vectors-<locale>.json` (optional), `emoji-build-manifest.json` တို့ သိမ်းပါတယ်
+### Burmese query analysis
 
-#### ဥပမာ: emoji entry တစ်ခုရဲ့ data build
+Burmese query တစ်ခုလာရင်:
 
-```
-Input:
-  emoji: 😊
-  Unicode name: "smiling face with smiling eyes"
-  CLDR English keywords: ["blush", "smile", "eye"]
-  CLDR Burmese name: "အပြုံးမျက်နှာ"
-  CLDR Burmese keywords: ["ပြုံး", "မျက်နှာ"]
-  Contributor keywords (my-extra-keywords.csv): ["ပျော်ရွှင်", "ချစ်စရာ"]
+1. normalize လုပ်တယ်
+2. compact Myanmar text ပြောင်းတယ်
+3. `sylbreak` နဲ့ syllable ခွဲတယ်
+4. lexicon ထဲမှာ ရှိတဲ့ span တွေကနေ concept phrase ပြန်ဖော်တယ်
+5. `semanticViews` ကို
+   - raw query
+   - spaced syllable view
+   - recovered concept phrase
+   တွေကနေ တည်ဆောက်တယ်
 
-Output (emoji-index-my.json entry):
-  enName: "smiling face with smiling eyes"
-  englishKeywords: ["blush", "smile", "eye"]
-  localizedName: "အပြုံးမျက်နှာ"
-  localizedKeywords: ["ပြုံး", "မျက်နှာ"]
-  contributorKeywords: ["ပျော်ရွှင်", "ချစ်စရာ"]
-  wordTokens: ["အပြုံးမျက်နှာ", "ပြုံး", "မျက်နှာ", "ပျော်ရွှင်", "ချစ်စရာ"]
-  group: "Smileys & Emotion"
-  subgroup: "face-smiling"
-```
+### အရေးကြီး analysis field တွေ
 
-### Output files
+- `syllables`: `sylbreak` ထွက်တဲ့ raw syllable တွေ
+- `expandedTerms`: `သဲကန္တာရ`, `ကားမောင်း` လို recovered concept phrase တွေ
+- `semanticViews`: embedding service ဆီပို့မယ့် view တွေ
 
-- `public/data/emoji/emoji-index-my.json` — မြန်မာ lexical data
-- `public/data/emoji/emoji-index-shn.json` — ရှမ်း lexical data
-- `public/data/emoji/emoji-index-en.json` — English lexical data
-- `public/data/emoji/emoji-vectors-my.json` — မြန်မာ semantic vectors
-- `public/data/emoji/emoji-build-manifest.json` — build manifest (shared)
+## ၃။ Lexical Ranking
 
-## ၂. Client Runtime ရှာဖွေရေး
+Lexical ranking က browser ထဲမှာပဲ အမြဲ run ပါတယ်။
 
-Browser က ရွေးထားတဲ့ locale ရဲ့ lexical index ကို load လုပ်ပြီး lexical scoring ကို locally လုပ်ပါတယ်။ Semantic mode ဖွင့်ထားတဲ့ locale ဆိုရင် vector index ကိုလည်း lazily fetch လုပ်ပြီး semantic score တွေကို ranking ထဲ merge လုပ်ပါတယ်။
+### Burmese
 
-Runtime logic အဓိက ရှိတဲ့ file များ:
+Burmese ranking က:
 
-- [hooks/use-semantic-search.ts](../hooks/use-semantic-search.ts) — search hook
-- [lib/emoji-data.ts](../lib/emoji-data.ts) — data loading & caching
-- [lib/search-ranking.ts](../lib/search-ranking.ts) — ranking logic
-- [lib/locale-config.ts](../lib/locale-config.ts) — locale registry
+- compact query exact match
+- localized keyword / contributor match
+- syllable overlap
+- `expandedTerms` concept support
 
-### Client Search Flow
+တို့ကို သုံးပါတယ်။
 
-```mermaid
-sequenceDiagram
-    participant User as အသုံးပြုသူ
-    participant Browser
-    participant Vercel as Vercel /api/embed
-    participant Space as HF Space
+ဒါဟာ intentional search-oriented design ပါ။ ရည်ရွယ်ချက်က perfect Burmese segmentation မဟုတ်ဘဲ Burmese query ကနေ emoji concept မှန်မှန်ရှာပေးနိုင်ဖို့ပါ။
 
-    User->>Browser: Locale ရွေးချယ်
-    Browser->>Browser: emoji-index-<locale>.json Load
-    User->>Browser: Query ရိုက်ထည့်
-    Browser->>Browser: Lexical score တွက်ချက်
-    Browser->>Browser: Semantic mode ဖွင့်ထားရင် vectors load
-    Browser->>Vercel: GET /api/embed?q=...
-    Vercel->>Space: GET /embed?q=...
-    Space-->>Vercel: { vector: [384 floats] }
-    Vercel-->>Browser: { vector: [384 floats] }
-    Browser->>Browser: Emoji embeddings နဲ့ cosine similarity တွက်
-    Browser->>Browser: Lexical + semantic score ပေါင်းစည်း
-    Browser-->>User: အဆင့်သတ်မှတ်ထားတဲ့ emoji ရလဒ်များ
-```
+### English နဲ့ Shan
 
-#### ဥပမာ: query "ပြုံး" အတွက် runtime flow
+English နဲ့ Shan က generic path ကို ဆက်သုံးပါတယ်။
 
-```
-1. User "ပြုံး" ရိုက်ထည့်
-2. Browser: lexical scoring စစ်ဆေး
-   → "ပြုံး" keyword ကိုက်ညီတဲ့ emoji တွေ ရှာ
-   → 😊 (wordTokens: ["ပြုံး"]) ✅ ကိုက်ညီ
-   → 😁 (wordTokens: ["ပြုံး"]) ✅ ကိုက်ညီ
-   → 🏠 (wordTokens: ["အိမ်"]) ❌ မကိုက်ညီ
-3. Semantic mode (my) ဖွင့်ထားရင်:
-   → /api/embed?q=ပြုံး → [0.12, -0.34, ...] 384d vector
-   → emoji-vectors-my.json load
-   → cosine similarity တွက် → semantic boost ထည့်
-4. ရလဒ်: 😊, 😁, 😄 ... (score အမြင့်ဆုံးကနေ)
-```
+## ၄။ Semantic Search
 
-## ၃. Locale Model
+Semantic search ကို locale config နဲ့ UI toggle ပေါ် မူတည်ပြီး ဖွင့်ပါတယ်။
 
-[lib/locale-config.ts](../lib/locale-config.ts) ထဲက locale registry က ဒီအချက်တွေအတွက် single source of truth ဖြစ်ပါတယ်:
+ဖွင့်ထားရင်:
 
-- Support ပေးထားတဲ့ locale IDs
-- Display labels
-- CLDR source locale code
-- ISO metadata
-- Placeholder text နဲ့ example chips
-- Search strategy
-- Semantic availability
+1. `semanticViews` တစ်ခုချင်းစီကို embed လုပ်တယ်
+2. precomputed emoji embedding တွေနဲ့ browser ထဲမှာ similarity တွက်တယ်
+3. lexical evidence အပေါ် semantic boost ထပ်ပေါင်းတယ်
 
-Support ပေးထားတဲ့ locale တွေသာ runtime selector ထဲ ပေါ်ပါတယ်။ Emoji annotation data မရှိသေးတဲ့ planned locale တွေက documentation ထဲသာ ရှိပါတယ်။
+လက်ရှိ repo အခြေအနေအရ semantic vector file ကို Burmese (`my`) နဲ့ English (`en`) အတွက် ထုတ်ထားပြီး Shan (`shn`) က lexical-only ဖြစ်ပါတယ်။
 
-#### ဥပမာ: locale config entry
+Burmese အတွက် recovered concept phrase တွေ အရေးကြီးပါတယ်။ Burmese query အရှည်တစ်ခုမှာ raw sentence embedding တစ်ခုတည်းထက် `သဲကန္တာရ`, `ကားမောင်း` လို concept view တွေက ပိုအသုံးဝင်တတ်ပါတယ်။
 
-```
-{
-  id: "my",
-  label: "မြန်မာ",
-  cldrLocale: "my",
-  searchStrategy: "burmese",
-  semanticEnabled: true,
-  placeholder: "emoji ရှာမယ်...",
-  examples: ["ပျော်ရွှင်", "နှလုံးသား", "ကြောင်"]
-}
-```
+English လို generic locale တွေမှာတော့ normalized query တစ်ခုကို အဓိက semantic view အနေနဲ့ သုံးပြီး အတူတူ vector-comparison path ကို ဆက်အသုံးပြုပါတယ်။
 
-## ၄. Lexical ရှာဖွေရေး
+## ၅။ ဒီ simplified design ကို ဘာကြောင့် ရွေးလဲ
 
-Lexical ranking က browser ထဲမှာ အမြဲ run ပါတယ်။
+အဟောင်း query path က:
 
-### မြန်မာ
+- syllable splitting
+- partial word segmentation
+- concept recovery
 
-မြန်မာက locale-specific lexical path ကို သုံးပါတယ်:
+တို့ကို ရောသုံးထားပါတယ်။
 
-- Myanmar text compaction
-- oppaWord-inspired segmentation
-- `wordTokens` matching
-- Contributor keyword boosts
-- English fallback keywords
+လက်တွေ့မှာတော့ query-time segmenter က `sylbreak` နဲ့ အတူတူ output ထွက်တတ်တာများပြီး အဓိကအသုံးဝင်တာက concept recovery ဘက်ဖြစ်နေတာကို တွေ့ရပါတယ်။ အခု architecture က အဲဒါကို ပိုရှင်းအောင် ဖော်ပြထားပါတယ်:
 
-#### ဥပမာ: မြန်မာ lexical ရှာဖွေရေး
-
-```
-Query: "နှလုံးသား"
-↓ Myanmar text compaction
-↓ oppaWord segmentation → ["နှလုံးသား"]
-↓ wordTokens matching:
-  ❤️ wordTokens: ["နှလုံးသား"] → ✅ ကိုက်ညီ (score မြင့်)
-  💔 wordTokens: ["နှလုံးသား", "ကွဲ"] → ✅ ကိုက်ညီ
-  😊 wordTokens: ["ပြုံး"] → ❌ မကိုက်ညီ
-```
-
-### ရှမ်း နှင့် English
-
-ရှမ်းနဲ့ English က generic locale path ကို သုံးပါတယ်:
-
-- Localized name exact match
-- Localized keyword phrase match
-- Token overlap against localized keywords
-- Contributor keyword support
-- English keyword support (dataset ထဲမှာ merge ထားပြီးသား)
-
-ဒီလိုလုပ်ခြင်းအားဖြင့် locale တိုင်း သဘာဝကျကျ ရှာနိုင်ပြီး မြန်မာက locale-specific analyzer အဆင့်မြင့်ဆုံး ဖြစ်နေပါတယ်။
-
-## ၅. Semantic ရှာဖွေရေး
-
-Semantic search က လက်ရှိ မြန်မာအတွက်သာ run ပါတယ်။
-
-Semantic mode ဖွင့်ထားတဲ့အခါ:
-
-1. Client က မူရင်း Burmese query နဲ့ segmented query ကနေ query views တည်ဆောက်ပါတယ်
-2. အဲ့ query views တွေကို `/api/embed` ကို ပို့ပါတယ်
-3. [app/api/embed/route.ts](../app/api/embed/route.ts) က request ကို Hugging Face Space ကို forward လုပ်ပါတယ်
-4. [hf-space-embed-service/server.mjs](../hf-space-embed-service/server.mjs) Space service က `intfloat/multilingual-e5-small` model ကို load လုပ်ပြီး `query:` prefix နဲ့ query ပို့ကာ 384-dimensional vector ပြန်ပေးပါတယ်
-5. Client က `emoji-vectors-my.json` ကို lazily fetch လုပ်ပါတယ်
-6. Query-view vector တစ်ခုချင်းကို emoji embedding တစ်ခုချင်းနဲ့ cosine similarity တွက်ပြီး အအားကောင်းဆုံး weighted signal ကို သုံးပါတယ်
-7. Semantic similarity မြင့်တာက lexical evidence ကို boost ပေးပါတယ်၊ အစားထိုးတာ မဟုတ်ပါ
-
-#### ဥပမာ: semantic query views
-
-```
-Query: "ပျော်ရွှင်တဲ့မျက်နှာ"
-↓ analyzeBurmeseQuery
-semanticViews:
-  view 1: "ပျော်ရွှင်တဲ့မျက်နှာ" (မူရင်း query)
-  view 2: "ပျော်ရွှင် တဲ့ မျက်နှာ" (segmented view)
-↓ /api/embed
-  view 1 → [0.23, -0.11, ...] 384d vector
-  view 2 → [0.19, -0.08, ...] 384d vector
-↓ cosine similarity vs emoji embeddings
-  😊 similarity: 0.87 (view 1 ကပိုကောင်း)
-  😁 similarity: 0.82
-↓ semantic boost ← lexical ranking ထဲ ထည့်ပေး
-```
-
-ရှမ်းနဲ့ English က lexical mode သာ ရှိပြီး UI မှာ semantic search ကို ပိတ်ထားပါတယ်။
-
-## ၆. လည်ပတ်မှုဆိုင်ရာ မှတ်စုများ
-
-- Browser က locale အလိုက် lexical dataset ကို load ပြီးတာနဲ့ cache လုပ်ပါတယ်
-- Semantic-enabled locale တွေအတွက်သာ vector dataset ကို cache လုပ်ပါတယ်
-- Offline rebuild တွေက `emoji-build-manifest.json` ကနေ incremental ပုံစံ default ဖြစ်ပါတယ်
-- English keywords ကို support ပေးထားတဲ့ locale dataset တိုင်းထဲ merge ထားပါတယ်
-- Locale-specific contributor file မရှိတဲ့ locale ကို empty အဖြစ် treat လုပ်ပါတယ်
-- Hugging Face Space ကို `EMBEDDING_SERVICE_URL` environment variable နဲ့ ပြောင်းလို့ရပါတယ်
+- `sylbreak` က base layer
+- lexicon က concept recovery ကို မောင်းနှင်တယ်
+- ranking က concept ကို အခြေခံတယ်
 
 ## References
 
-Implement လုပ်ထားတဲ့ sources:
-
-- [oppaWord](https://github.com/ye-kyaw-thu/oppaWord)
 - [sylbreak](https://github.com/ye-kyaw-thu/sylbreak)
 - [Multilingual E5 model card](https://huggingface.co/intfloat/multilingual-e5-small)
 - [Multilingual E5 technical report](https://arxiv.org/abs/2402.05672)
-
-သုံးသပ်ခဲ့ပြီး integrate မလုပ်ရသေးတဲ့ sources:
-
-- [myWord](https://github.com/ye-kyaw-thu/myWord)
-- [NgaPi](https://github.com/ye-kyaw-thu/NgaPi)

@@ -10,6 +10,7 @@
   { "query": "မိုး", "expectedTop10": ["☔", "🌧️"], "minimumHits": 1 },
   { "query": "နေ", "expectedTop10": ["☀️", "🌞"], "minimumHits": 1 },
   { "query": "သစ်ပင်", "expectedTop10": ["🌳", "🌴"], "minimumHits": 1 },
+  { "query": "သဲကန္တာရထဲကားမောင်း", "expectedTop10": ["🏜️", "🐪", "🐫", "🌵", "🏎️", "🚗", "🚘", "🚙"], "minimumHits": 2 },
   { "query": "လေယာဉ်", "expectedTop10": ["✈️", "🛫", "🛬"], "minimumHits": 1 },
   { "query": "သင်္ဘော", "expectedTop10": ["🚢", "⛵"], "minimumHits": 1 },
   { "query": "ရွက်လှေ", "expectedTop10": ["⛵"], "minimumHits": 1 },

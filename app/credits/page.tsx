@@ -41,12 +41,6 @@ const creditSections: Array<{ title: string; items: CreditItem[] }> = [
     title: "Research & NLP",
     items: [
       {
-        name: "oppaWord",
-        note: "Hybrid DAG + Bi-MM + LM Myanmar word segmenter by Ye Kyaw Thu. Inspired the Burmese word-segmentation used in the search.",
-        href: "https://github.com/ye-kyaw-thu/oppaWord",
-        citation: "@misc{oppaWord_2025,\n  author       = {Ye Kyaw Thu},\n  title        = {{oppaWord: Hybrid DAG+Bi-MM+LM Myanmar Word Segmenter}},\n  version      = {1.0},\n  month        = {August},\n  year         = {2025},\n  publisher    = {GitHub},\n  url          = {https://github.com/ye-kyaw-thu/oppaWord},\n  institution  = {Language Understanding Lab (LU Lab), Myanmar}\n}",
-      },
-      {
         name: "sylbreak",
         note: "Syllable segmentation tool for Myanmar language by Ye Kyaw Thu. Used as the base syllable layer for search normalization.",
         href: "https://github.com/ye-kyaw-thu/sylbreak",

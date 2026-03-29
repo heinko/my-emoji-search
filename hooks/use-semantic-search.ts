@@ -1,12 +1,13 @@
 import { startTransition, useState, useEffect, useCallback, useRef } from 'react';
 import { loadEmojiEmbeddings, mergeEmojiEmbeddings, type EmojiItem } from '@/lib/emoji-data';
 import { getLocaleConfig } from '@/lib/locale-config';
-import { type OppaWordLexicon } from '@/lib/oppa-word';
+import { type MyanmarSearchLexicon } from '@/lib/burmese-lexicon';
 import {
   analyzeSearchQuery,
   buildSearchLexiconFromEmojiData,
   buildSemanticSignal,
   rankEmojiResults,
+  type QueryAnalysis,
 } from '@/lib/search-ranking';
 
 async function fetchEmbeddingFromAPI(query: string): Promise<number[]> {
@@ -37,8 +38,9 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean, l
   const [results, setResults] = useState<EmojiItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [modelLoading, setModelLoading] = useState(false);
+  const [queryAnalysis, setQueryAnalysis] = useState<QueryAnalysis | null>(null);
   const isExtracting = useRef(false);
-  const lexiconRef = useRef<OppaWordLexicon | null>(null);
+  const lexiconRef = useRef<MyanmarSearchLexicon | null>(null);
   const latestQuery = useRef('');
   const resultCacheRef = useRef(new Map<string, EmojiItem[]>());
   const embeddingCacheRef = useRef(new Map<string, number[]>());
@@ -49,6 +51,7 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean, l
     resultCacheRef.current = new Map();
     embeddingCacheRef.current = new Map();
     setResults([]);
+    setQueryAnalysis(null);
   }, [localeId]);
 
   useEffect(() => {
@@ -102,6 +105,7 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean, l
       if (!query.trim()) {
         startTransition(() => {
           setResults([]);
+          setQueryAnalysis(null);
         });
         setIsSearching(false);
         return;
@@ -109,6 +113,9 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean, l
 
       const lowerQuery = query.toLowerCase();
       const canUseSemantic = isSemantic && localeConfig.semanticEnabled;
+      const lexicon = lexiconRef.current ?? buildSearchLexiconFromEmojiData(allEmojis);
+      const queryAnalysis = analyzeSearchQuery(lowerQuery, lexicon, localeConfig.searchStrategy);
+      setQueryAnalysis(queryAnalysis);
       const cacheKey = createSearchCacheKey(lowerQuery, localeId, canUseSemantic);
       const cachedResults = resultCacheRef.current.get(cacheKey);
 
@@ -121,8 +128,6 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean, l
       }
 
       setIsSearching(true);
-      const lexicon = lexiconRef.current ?? buildSearchLexiconFromEmojiData(allEmojis);
-      const queryAnalysis = analyzeSearchQuery(lowerQuery, lexicon, localeConfig.searchStrategy);
 
       let semanticSignal;
       let searchDataset = allEmojis;
@@ -180,6 +185,7 @@ export function useSemanticSearch(allEmojis: EmojiItem[], isSemantic: boolean, l
 
   return {
     modelLoading,
+    queryAnalysis,
     results,
     search,
     isSearching,

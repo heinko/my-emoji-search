@@ -2,9 +2,19 @@
 
 import { memo, useDeferredValue, useMemo, useState, useEffect, useRef } from "react"
 import { Search, Check, Sparkles, Loader2, BrainCircuit, Info, Palette, Languages } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { loadEmojiData, type EmojiItem } from "@/lib/emoji-data"
 import { DEFAULT_LOCALE_ID, getLocaleConfig, SUPPORTED_LOCALES } from "@/lib/locale-config"
+import type { QueryAnalysis } from "@/lib/search-ranking"
 import {
   SKIN_TONE_LABELS,
   SKIN_TONE_ORDER,
@@ -51,8 +61,12 @@ export default function EmojiSearch() {
   }, [localeId])
 
   // 2. Transformer Semantic Search Hook
-  const { results, search, isSearching, modelLoading, semanticAvailable } = useSemanticSearch(allEmojis, isSemantic, localeId)
+  const { results, search, isSearching, modelLoading, queryAnalysis, semanticAvailable } = useSemanticSearch(allEmojis, isSemantic, localeId)
   const skinToneOptionsByBase = useMemo(() => buildSkinToneOptionsMap(allEmojis), [allEmojis])
+  const showBurmeseDebug =
+    locale.searchStrategy === "burmese" &&
+    searchTerm.trim() !== "" &&
+    Boolean(queryAnalysis?.isBurmeseQuery)
 
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -208,15 +222,43 @@ export default function EmojiSearch() {
               </TooltipProvider>
             </Label>
           </div>
-          {!semanticAvailable ? (
-            <span className="text-xs text-muted-foreground">
-              Semantic search is not available for {locale.label} yet.
-            </span>
-          ) : modelLoading ? (
-            <span className="text-xs text-primary animate-pulse font-medium">
-              Loading semantic index...
-            </span>
-          ) : null}
+          <div className="flex items-center gap-2">
+            {showBurmeseDebug && queryAnalysis && (
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 rounded-full px-3 text-xs"
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                    Query Breakdown
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-h-[85vh] max-w-4xl overflow-y-auto rounded-3xl p-0">
+                  <DialogHeader className="border-b border-border px-6 py-5">
+                    <DialogTitle>Query Breakdown</DialogTitle>
+                    <DialogDescription>
+                      Inspect raw syllables, recovered concepts, and semantic views for the current Burmese query.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="p-6">
+                    <BurmeseQueryDebug analysis={queryAnalysis} />
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
+
+            {!semanticAvailable ? (
+              <span className="text-xs text-muted-foreground">
+                Semantic search is not available for {locale.label} yet.
+              </span>
+            ) : modelLoading ? (
+              <span className="text-xs text-primary animate-pulse font-medium">
+                Loading semantic index...
+              </span>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -461,3 +503,75 @@ const EmojiCard = memo(function EmojiCard({
     </div>
   )
 })
+
+function BurmeseQueryDebug({ analysis }: { analysis: QueryAnalysis }) {
+  return (
+    <div className="space-y-3">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-sm font-semibold text-foreground">Query Breakdown</span>
+        <span className="text-xs text-muted-foreground">Live Burmese analysis</span>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <DebugChipGroup
+          label="sylbreak"
+          description="Raw syllables from compact query"
+          values={analysis.syllables}
+        />
+        <DebugChipGroup
+          label="expandedTerms"
+          description="Recovered concepts used for search"
+          values={analysis.expandedTerms}
+        />
+      </div>
+
+      <div className="mt-3 rounded-2xl bg-secondary/50 p-3">
+        <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          semanticViews
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {analysis.semanticViews.map((view) => (
+            <span
+              key={`${view.text}-${view.weight}`}
+              className="rounded-full border border-border bg-background px-3 py-1.5 text-xs text-foreground"
+            >
+              {view.text}
+              <span className="ml-2 text-muted-foreground">{view.weight.toFixed(2)}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DebugChipGroup({
+  label,
+  description,
+  values,
+}: {
+  label: string
+  description: string
+  values: string[]
+}) {
+  return (
+    <div className="rounded-2xl bg-secondary/50 p-3">
+      <div className="text-sm font-semibold text-foreground">{label}</div>
+      <div className="mt-1 text-xs text-muted-foreground">{description}</div>
+      <div className="mt-3 flex min-h-12 flex-wrap gap-2">
+        {values.length > 0 ? (
+          values.map((value) => (
+            <span
+              key={`${label}-${value}`}
+              className="rounded-full border border-border bg-background px-3 py-1.5 text-sm text-foreground"
+            >
+              {value}
+            </span>
+          ))
+        ) : (
+          <span className="text-sm text-muted-foreground">None</span>
+        )}
+      </div>
+    </div>
+  )
+}

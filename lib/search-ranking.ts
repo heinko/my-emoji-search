@@ -6,16 +6,17 @@ import {
   buildEmojiSearchLexicon,
   type BurmeseQueryAnalysis,
 } from './burmese-search';
-import { compactMyanmarText, containsMyanmarText, type OppaWordLexicon } from './oppa-word';
+import { compactMyanmarText, containsMyanmarText, type MyanmarSearchLexicon } from './burmese-lexicon';
 
 export interface QueryAnalysis {
   compactQuery?: string;
   englishTokens: string[];
+  expandedTerms: string[];
   isBurmeseQuery: boolean;
   requestedSkinTones: SkinToneId[];
   searchStrategy: SearchStrategy;
   semanticViews: Array<{ text: string; weight: number }>;
-  segmentedTerms: string[];
+  syllables: string[];
 }
 
 export interface QueryEmbedding {
@@ -143,13 +144,13 @@ export function cosineSimilarity(
   return dotProduct / denominator;
 }
 
-export function buildSearchLexiconFromEmojiData(allEmojis: EmojiItem[]): OppaWordLexicon {
+export function buildSearchLexiconFromEmojiData(allEmojis: EmojiItem[]): MyanmarSearchLexicon {
   return buildEmojiSearchLexicon(allEmojis);
 }
 
 export function analyzeSearchQuery(
   query: string,
-  lexicon: OppaWordLexicon,
+  lexicon: MyanmarSearchLexicon,
   searchStrategy: SearchStrategy
 ): QueryAnalysis {
   const normalized = query.toLowerCase().trim();
@@ -159,11 +160,12 @@ export function analyzeSearchQuery(
   if (!isBurmeseQuery) {
     return {
       englishTokens: tokenizeEnglish(normalized),
+      expandedTerms: [],
       isBurmeseQuery,
       requestedSkinTones,
       searchStrategy,
       semanticViews: normalized ? [{ text: normalized, weight: 1 }] : [],
-      segmentedTerms: [],
+      syllables: [],
     };
   }
 
@@ -171,11 +173,12 @@ export function analyzeSearchQuery(
   return {
     compactQuery: analysis.compactQuery,
     englishTokens: [],
+    expandedTerms: analysis.expandedTerms,
     isBurmeseQuery,
     requestedSkinTones,
     searchStrategy,
     semanticViews: analysis.queryViews,
-    segmentedTerms: analysis.segmentedTerms,
+    syllables: analysis.syllables,
   };
 }
 
@@ -282,7 +285,9 @@ function hasBurmeseTermSupport(emoji: EmojiItem, term: string): boolean {
     .filter(Boolean)
     .map((field) => compactMyanmarText(field!));
 
-  return compactFields.some((field) => field === term || field.includes(term));
+  return compactFields.some(
+    (field) => field === term || (term.length >= 4 && field.includes(term))
+  );
 }
 
 function matchesContributorKeyword(emoji: EmojiItem, term: string): boolean {
@@ -294,7 +299,9 @@ function matchesContributorKeyword(emoji: EmojiItem, term: string): boolean {
     .map((keyword) => compactMyanmarText(keyword))
     .filter(Boolean);
 
-  return compactContributorKeywords.some((keyword) => keyword === term || keyword.includes(term));
+  return compactContributorKeywords.some(
+    (keyword) => keyword === term || (term.length >= 4 && keyword.includes(term))
+  );
 }
 
 function shouldAllowBurmeseSubstringBoost(compactQuery: string): boolean {
@@ -331,32 +338,31 @@ function scoreBurmeseLexical(emoji: EmojiItem, analysis: QueryAnalysis): number 
     score += 2.3;
   }
 
-  const primaryHits = analysis.segmentedTerms.filter((term) => hasBurmeseTermSupport(emoji, term));
-  if (analysis.segmentedTerms.length > 0) {
-    score += (primaryHits.length / analysis.segmentedTerms.length) * 2.0;
-    if (primaryHits.length === analysis.segmentedTerms.length && analysis.segmentedTerms.length > 1) {
+  const primaryHits = analysis.syllables.filter((term) => hasBurmeseTermSupport(emoji, term));
+  if (analysis.syllables.length > 0) {
+    score += (primaryHits.length / analysis.syllables.length) * 2.0;
+    if (primaryHits.length === analysis.syllables.length && analysis.syllables.length > 1) {
       score += 0.5;
     }
   }
 
-  if (phraseFieldMatch && analysis.segmentedTerms.length > 1 && primaryHits.length > 0) {
+  if (phraseFieldMatch && analysis.syllables.length > 1 && primaryHits.length > 0) {
     score += 0.6;
   }
 
-  const contributedHits = analysis.segmentedTerms.filter((term) => matchesContributorKeyword(emoji, term));
-  if (analysis.segmentedTerms.length > 0 && contributedHits.length > 0) {
-    score += (contributedHits.length / analysis.segmentedTerms.length) * 1.3;
+  const contributedHits = analysis.syllables.filter((term) => matchesContributorKeyword(emoji, term));
+  if (analysis.syllables.length > 0 && contributedHits.length > 0) {
+    score += (contributedHits.length / analysis.syllables.length) * 1.3;
   }
 
-  const expandedTerms =
-    analysis.semanticViews.length > 1
-      ? analysis.semanticViews[analysis.semanticViews.length - 1].text.split(/\s+/).filter(Boolean)
-      : [];
-  const expandedOnly = expandedTerms.filter((term) => !analysis.segmentedTerms.includes(term));
+  const expandedOnly = analysis.expandedTerms.filter((term) => !analysis.syllables.includes(term));
   const expandedHits = expandedOnly.filter((term) => hasBurmeseTermSupport(emoji, term));
 
   if (expandedOnly.length > 0) {
-    score += (expandedHits.length / expandedOnly.length) * 0.45;
+    score += (expandedHits.length / expandedOnly.length) * 1.4;
+    if (expandedHits.length > 0) {
+      score += 0.8;
+    }
   }
 
   return score;
@@ -364,8 +370,8 @@ function scoreBurmeseLexical(emoji: EmojiItem, analysis: QueryAnalysis): number 
 
 function semanticGate(lexicalScore: number, isBurmeseQuery: boolean): number {
   if (lexicalScore >= 1.6) return 1;
-  if (lexicalScore >= 0.8) return 0.7;
-  return isBurmeseQuery ? 0.25 : 0.45;
+  if (lexicalScore >= 0.8) return 0.8;
+  return isBurmeseQuery ? 0.65 : 0.45;
 }
 
 function getDominantCohortKey(
@@ -511,10 +517,11 @@ function logRankingDebug(
   console.log('analysis', {
     compactQuery: analysis.compactQuery,
     englishTokens: analysis.englishTokens,
+    expandedTerms: analysis.expandedTerms,
     isBurmeseQuery: analysis.isBurmeseQuery,
     requestedSkinTones: analysis.requestedSkinTones,
     searchStrategy: analysis.searchStrategy,
-    segmentedTerms: analysis.segmentedTerms,
+    syllables: analysis.syllables,
     semanticViews: analysis.semanticViews,
   });
   console.table(debugEntries);
@@ -586,7 +593,10 @@ export function rankEmojiResults(
         semanticSimilarity,
       };
     })
-    .filter((entry) => entry.finalScore > (isBurmeseLexicalSearch ? 5 : 4))
+    .filter((entry) =>
+      entry.finalScore >
+      (semanticSignal ? (isBurmeseLexicalSearch ? 2.6 : 3.2) : isBurmeseLexicalSearch ? 3.4 : 4)
+    )
     .sort((a, b) => b.finalScore - a.finalScore);
 
   if (options?.debug) {
