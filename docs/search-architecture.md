@@ -2,198 +2,124 @@
 
 > 📖 [မြန်မာဘာသာဖြင့် ဖတ်ရန်](./search-architecture-my.md)
 
-This document explains how the project prepares locale-aware emoji data, generates embeddings, and executes search at runtime.
+This document describes the current search architecture after removing the older query-time word segmenter. Burmese search now uses a simpler pipeline:
+
+- `sylbreak` for syllable splitting
+- a Burmese search lexicon built from emoji names and keywords
+- concept recovery from syllable spans that exist in that lexicon
+- optional semantic search over the raw query plus recovered concepts
 
 ## High-Level Design
 
-The system splits into two paths:
+The system still has two paths:
 
-- Offline preparation: build one emoji dataset per supported locale and precompute embeddings where enabled
-- Runtime search: load the selected locale dataset in the browser, rank locally, and optionally merge semantic signals
+- Offline preparation: build locale-specific emoji data and optional embeddings
+- Runtime search: rank locally in the browser and add semantic boosts when enabled
 
-```mermaid
-flowchart LR
-    subgraph Offline["Offline data build"]
-        U["Unicode 17 emoji list"]
-        E["CLDR English annotations"]
-        L["CLDR locale annotations"]
-        O["Per-locale CSV overrides"]
-        P["data/scripts/update-emoji.ts"]
-        I["emoji-index-<locale>.json"]
-        V["emoji-vectors-<locale>.json"]
-        U --> P
-        E --> P
-        L --> P
-        O --> P
-        P --> I
-        P --> V
-    end
+## 1. Offline Data Preparation
 
-    subgraph Runtime["Runtime search"]
-        B["Browser client"]
-        R["Local ranking"]
-        A["Vercel /api/embed"]
-        H["HF Space"]
-        B --> R
-        B --> A
-        A --> H
-        H --> B
-    end
-
-    I --> B
-    V --> B
-```
-
-## 1. Data Preparation
-
-The build script in [data/scripts/update-emoji.ts](/Users/heink/v0-burmese-emoji-search-su/data/scripts/update-emoji.ts) generates one runtime dataset per supported locale.
+The build script in [data/scripts/update-emoji.ts](/Users/heink/v0-burmese-emoji-search-su/data/scripts/update-emoji.ts) generates one dataset per locale.
 
 ### Inputs
 
-- Official Unicode emoji definitions
-- CLDR English annotation data
-- CLDR locale-specific annotation data for supported locales
-- Locale-specific contributor keyword files such as [data/locales/my-extra-keywords.csv](/Users/heink/v0-burmese-emoji-search-su/data/locales/my-extra-keywords.csv)
+- Unicode emoji metadata
+- CLDR English annotations
+- CLDR locale annotations
+- per-locale contributor keyword CSV files
 
-### Supported Locales Today
+### Burmese-specific indexing
 
-- Burmese (`my`)
-- Shan (`shn`)
-- English (`en`)
+For Burmese, the build step creates a search lexicon from:
 
-### Build Flow
+- localized emoji names
+- localized keywords
+- contributor keywords
+- existing `wordTokens`
 
-1. Fetch Unicode emoji metadata and keep fully-qualified emoji entries.
-2. Fetch CLDR English annotations and merge any derived annotations.
-3. Fetch CLDR annotations for each supported locale and merge any derived annotations.
-4. Merge locale-specific contributor keywords from `data/locales/<locale>-extra-keywords.csv`.
-5. Build one lexical dataset per locale containing:
-   - English name, group, and subgroup
-   - English CLDR keywords
-   - locale-native name and keywords
-   - locale-specific contributor keywords
-6. For Burmese only, build an oppaWord-inspired lexicon and generate `wordTokens`.
-7. Build embeddings only for locales whose semantic mode is enabled.
-8. Reuse existing embeddings when the embedding input hash is unchanged.
-9. Save locale outputs to `emoji-index-<locale>.json`, optional `emoji-vectors-<locale>.json`, and the shared `emoji-build-manifest.json`.
+Then [buildBurmeseSearchMetadata()](/Users/heink/v0-burmese-emoji-search-su/lib/burmese-search.ts) produces `wordTokens` using:
 
-### Output
+1. normalized Burmese text
+2. compact Myanmar text
+3. `sylbreak` syllables
+4. recovered concept phrases from lexicon-backed syllable spans
 
-- [public/data/emoji/emoji-index-my.json](/Users/heink/v0-burmese-emoji-search-su/public/data/emoji/emoji-index-my.json)
-- [public/data/emoji/emoji-index-shn.json](/Users/heink/v0-burmese-emoji-search-su/public/data/emoji/emoji-index-shn.json)
-- [public/data/emoji/emoji-index-en.json](/Users/heink/v0-burmese-emoji-search-su/public/data/emoji/emoji-index-en.json)
-- [public/data/emoji/emoji-vectors-my.json](/Users/heink/v0-burmese-emoji-search-su/public/data/emoji/emoji-vectors-my.json)
-- [public/data/emoji/emoji-build-manifest.json](/Users/heink/v0-burmese-emoji-search-su/public/data/emoji/emoji-build-manifest.json)
+This means the indexed Burmese tokens are concept-oriented search tokens, not outputs of a general-purpose Burmese word segmenter.
 
-## 2. Client Runtime Search
+## 2. Runtime Search
 
-The browser loads the lexical index for the selected locale and performs lexical scoring locally. If semantic mode is enabled for that locale, it lazily fetches the matching vector index and merges semantic scores into the final ranking.
-
-The runtime logic lives mainly in:
+The runtime path lives mainly in:
 
 - [hooks/use-semantic-search.ts](/Users/heink/v0-burmese-emoji-search-su/hooks/use-semantic-search.ts)
-- [lib/emoji-data.ts](/Users/heink/v0-burmese-emoji-search-su/lib/emoji-data.ts)
+- [lib/burmese-search.ts](/Users/heink/v0-burmese-emoji-search-su/lib/burmese-search.ts)
+- [lib/burmese-lexicon.ts](/Users/heink/v0-burmese-emoji-search-su/lib/burmese-lexicon.ts)
 - [lib/search-ranking.ts](/Users/heink/v0-burmese-emoji-search-su/lib/search-ranking.ts)
-- [lib/locale-config.ts](/Users/heink/v0-burmese-emoji-search-su/lib/locale-config.ts)
 
-### Client Search Flow
+### Burmese query analysis
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant Browser
-    participant Vercel as Vercel /api/embed
-    participant Space as HF Space
+For Burmese queries:
 
-    User->>Browser: Select locale
-    Browser->>Browser: Load emoji-index-<locale>.json
-    User->>Browser: Type query
-    Browser->>Browser: Compute lexical score
-    Browser->>Browser: Load emoji-vectors-<locale>.json if semantic mode is enabled
-    Browser->>Vercel: GET /api/embed?q=...
-    Vercel->>Space: GET /embed?q=...
-    Space-->>Vercel: { vector: [384 floats] }
-    Vercel-->>Browser: { vector: [384 floats] }
-    Browser->>Browser: Cosine similarity vs emoji embeddings
-    Browser->>Browser: Merge lexical + semantic score
-    Browser-->>User: Ranked emoji results
-```
+1. normalize the query
+2. compact Myanmar text
+3. split with `sylbreak`
+4. recover concept phrases from syllable spans that exist in the lexicon
+5. build `semanticViews` from:
+   - the raw query
+   - a spaced syllable view
+   - recovered concept phrases
 
-## 3. Locale Model
+### Important analysis fields
 
-The locale registry in [lib/locale-config.ts](/Users/heink/v0-burmese-emoji-search-su/lib/locale-config.ts) is the single source of truth for:
+- `syllables`: raw `sylbreak` output
+- `expandedTerms`: recovered concept phrases such as `သဲကန္တာရ` or `ကားမောင်း`
+- `semanticViews`: the views sent to the embedding service
 
-- supported locale IDs
-- display labels
-- CLDR source locale code
-- ISO metadata
-- placeholder text and example chips
-- search strategy
-- semantic availability
-
-Only supported locales appear in the runtime selector. Planned locales without ready emoji annotation data remain documentation-only.
-
-## 4. Lexical Search
+## 3. Lexical Ranking
 
 Lexical ranking always runs in the browser.
 
 ### Burmese
 
-Burmese uses a locale-specific lexical path:
+Burmese ranking uses:
 
-- Myanmar text compaction
-- oppaWord-inspired segmentation
-- `wordTokens`
-- contributor keyword boosts
-- English fallback keywords
+- exact compact-query matches
+- localized keyword and contributor matches
+- syllable overlap
+- recovered concept support from `expandedTerms`
 
-### Shan and English
+This is intentionally search-oriented. The goal is not perfect Burmese segmentation. The goal is to retrieve the right emoji concepts from real Burmese queries.
 
-Shan and English use the generic locale path:
+### English and Shan
 
-- exact localized-name match
-- localized keyword phrase match
-- token overlap against localized keywords
-- contributor keyword support
-- English keyword support merged into the same dataset
+English and Shan still use the generic lexical path with localized fields, English fallback fields, and token overlap.
 
-This lets every supported locale search naturally while keeping Burmese as the most advanced locale-specific analyzer.
-
-## 5. Semantic Search
+## 4. Semantic Search
 
 Semantic search currently runs only for Burmese.
 
-When semantic mode is enabled:
+When enabled:
 
-1. The client builds Burmese query views from the original query plus the segmented query.
-2. The client sends those query views to `/api/embed`.
-3. [app/api/embed/route.ts](/Users/heink/v0-burmese-emoji-search-su/app/api/embed/route.ts) forwards the request to the Hugging Face Space.
-4. The Space service in [hf-space-embed-service/server.mjs](/Users/heink/v0-burmese-emoji-search-su/hf-space-embed-service/server.mjs) loads `intfloat/multilingual-e5-small`, sends the query with the `query:` prefix, and returns a 384-dimensional vector.
-5. The client lazily fetches `emoji-vectors-my.json`.
-6. The client compares each query-view vector with each emoji embedding using cosine similarity and uses the strongest weighted signal.
-7. High semantic similarity boosts lexical evidence instead of replacing it.
+1. the client embeds each `semanticView`
+2. the browser compares those vectors against precomputed emoji embeddings
+3. the strongest weighted semantic signal boosts lexical evidence
 
-Shan and English currently expose lexical mode only, and the UI disables semantic search for those locales.
+This is why recovered concept phrases matter. A longer Burmese query often needs concept-level views like `သဲကန္တာရ` or `ကားမောင်း`, not just one raw sentence embedding.
 
-## 6. Operational Notes
+## 5. Why This Simpler Design
 
-- The browser caches lexical datasets by locale after load.
-- The browser caches vector datasets by locale and only for semantic-enabled locales.
-- Offline rebuilds are incremental by default through `emoji-build-manifest.json`.
-- English keywords are merged into every supported locale dataset.
-- Locale-specific contributor files are optional; missing files are treated as empty.
-- The Hugging Face Space can be changed later with `EMBEDDING_SERVICE_URL`.
+The earlier query path mixed:
+
+- syllable splitting
+- partial word segmentation
+- concept recovery
+
+In practice, the query-time segmenter often produced the same output as `sylbreak`, while concept recovery was doing most of the useful work. The current architecture makes that explicit:
+
+- `sylbreak` is the base layer
+- the lexicon powers concept recovery
+- ranking is based on concepts, not on pretending we have a full Burmese segmenter
 
 ## References
 
-Implemented sources:
-
-- [oppaWord](https://github.com/ye-kyaw-thu/oppaWord)
 - [sylbreak](https://github.com/ye-kyaw-thu/sylbreak)
 - [Multilingual E5 model card](https://huggingface.co/intfloat/multilingual-e5-small)
 - [Multilingual E5 technical report](https://arxiv.org/abs/2402.05672)
-
-Reviewed but not integrated:
-
-- [myWord](https://github.com/ye-kyaw-thu/myWord)
-- [NgaPi](https://github.com/ye-kyaw-thu/NgaPi)
